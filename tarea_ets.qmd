@@ -14,11 +14,10 @@ library("patchwork")
 library("plotly")
 ```
 
-
 Usaré dos series de tiempo:
 
-- Población de Canadá (Sin estacionalidad)
-- Producción de cerveza de Australia (Con estacionalidad)
+-   Población de Canadá (Sin estacionalidad)
+-   Producción de cerveza de Australia (Con estacionalidad)
 
 ```{r}
 autoplot(global_economy %>% filter(Country == "Canada"), Population) + ylab("Population") + xlab("Year")
@@ -91,4 +90,3 @@ beer_mul <- beer |> model(mult = ETS(Beer ~ error("M") + trend("A") + season("M"
 
 beer_mul |> autoplot(aus_production |> filter_index("2000"~.), level = NULL)
 ```
-

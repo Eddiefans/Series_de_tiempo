@@ -258,4 +258,3 @@ employment_refit |>
   forecast(h = "2 years") |> 
   autoplot(datos_tsbl_wide |> filter_index("2015 jan." ~ .))
 ```
-
