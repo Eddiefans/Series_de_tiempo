@@ -17,7 +17,6 @@ library(easypackages)
 libraries("tidyverse","fpp3", "patchwork","plotly")
 ```
 
-
 Los métodos de suavización exponencial son relativamente sencillos, pero son la base de algunos de los modelos más exitosos de pronóstico.
 
 Los pronósticos obtenidos a través de suavización exponencial son **promedios ponderados** de las observaciones pasadas, donde los pesos caen exponencialmente. Así, la observación más reciente tiene el mayor peso, seguida de la segunda, tercera, etc.
@@ -60,8 +59,7 @@ Entre más bajo sea el valor de $\alpha$, más memoria tendrá la serie y vice v
 
 Los pronósticos de suavización exponencial simple son **planos**. Esto quiere decir que el pronóstico toma el mismo valor para todo el horizonte (como el Naïve y Media, p. ej.).
 
-
-En **R**, la función para este modelo es `ETS()`. La optimización para encontrar el valor de $\alpha$, se define en `opt_crit = ` (criterio de optimización) y puede ser a través del *log-likelihood*, `lik`; el *error medio cuadrático*, `mse`; la *desviación estándar de los residuos*, `sigma`; o el *error medio absoluto*, `mae`. Definimos que queremos que el error se calcule de manera aditiva agregando `error("A")` en la ecuación del modelo (para multiplicativa habría que sustituir `"A"` por `"M"`). 
+En **R**, la función para este modelo es `ETS()`. La optimización para encontrar el valor de $\alpha$, se define en `opt_crit =` (criterio de optimización) y puede ser a través del *log-likelihood*, `lik`; el *error medio cuadrático*, `mse`; la *desviación estándar de los residuos*, `sigma`; o el *error medio absoluto*, `mae`. Definimos que queremos que el error se calcule de manera aditiva agregando `error("A")` en la ecuación del modelo (para multiplicativa habría que sustituir `"A"` por `"M"`).
 
 ```{r SES}
 # Estimar los parámetros
@@ -77,6 +75,7 @@ fc %>%
   # geom_line(aes(y = .fitted, colour = "Fitted"), data = augment(fit)) +
   ylab("Exports (% of GDP)") + xlab("Year")
 ```
+
 ```{r}
 fit %>% 
   select(SES) %>% 
@@ -89,23 +88,21 @@ fit %>%
 
 Con estos modelos ya se permite que el pronóstico tenga una tendencia. Por lo tanto, aparte del $\alpha$ (término de suavización), tenemos ahora una $\beta^*$, que es el parámetro de suavización de la tendencia, $0 \leq \beta^* \leq 1$. En **R**, habría que simplemente agregar el término `trend("A")` al modelo (para tendencia aditiva).
 
-* **Ecuación para el pronóstico:**
+-   **Ecuación para el pronóstico:**
 
 $$
 \hat{y}_{t+h} = l_t + hb_t
 $$
 
-* **Ecuación del nivel:**
-$$
-l_t = \alpha y_t + (1- \alpha)(l_{t-1} + b_{t-1})
-$$
+-   **Ecuación del nivel:** $$
+    l_t = \alpha y_t + (1- \alpha)(l_{t-1} + b_{t-1})
+    $$
 
-* **Ecuación de la tendencia:**
+-   **Ecuación de la tendencia:**
 
 $$
 b_t = \beta^*(l_t-l_{t-1}) + (1-\beta^*)b_{t-1}
 $$
-
 
 Haremos un ejemplo con la población de Australia:
 
@@ -138,24 +135,21 @@ fit %>%
 
 El método de Holt asume que la tendencia será constante (creciente o decreciente) a lo largo del tiempo. En muchas ocasiones, esto puede producir sobre (sub) estimaciones. Así, podemos generar modelos agregando un parámetro de amortiguamiento para esa tendencia, $0<\phi<1$. Si $\phi = 1$ sería igual al método de Holt.
 
-* **Ecuación para el pronóstico:**
+-   **Ecuación para el pronóstico:**
 
 $$
 \hat{y}_{t+h} = l_t + (\phi + \phi^2 + \ldots + \phi^h)b_t
 $$
 
-* **Ecuación del nivel:**
-$$
-l_t = \alpha y_t + (1- \alpha)(l_{t-1} + \phi b_{t-1})
-$$
+-   **Ecuación del nivel:** $$
+    l_t = \alpha y_t + (1- \alpha)(l_{t-1} + \phi b_{t-1})
+    $$
 
-* **Ecuación de la tendencia:**
+-   **Ecuación de la tendencia:**
 
 $$
 b_t = \beta^*(l_t-l_{t-1}) + (1-\beta^*)\phi b_{t-1}
 $$
-
-
 
 En la práctica, el valor de $\phi$ suele ser mayor a 0.8, ya que el amortiguamiento puede ser muy fuerte para valores más bajos. Así, se suele restringir el valor a $0.8 \leq \phi \leq 0.98$.
 
@@ -192,7 +186,6 @@ aus_economy %>%
   ylab("Population of Australia (millions)") +
   guides(colour = guide_legend(title = "Forecast"))
 ```
-
 
 ```{r}
 pop_fit <- aus_economy %>%
@@ -256,34 +249,33 @@ fit %>%
 ## Métodos con estacionalidad
 
 ### Modelo de Holt-Winters
- 
+
 Para estos métodos se agrega un nuevo parámetro, $\gamma$ y usamos $m$ para definir el periodo estacional. Hay dos variantes de este método: el aditivo y el multiplicativo. Se prefiere el aditivo cuando el componente estacional se mantiene constante en el tiempo y multiplicativo cuando va variando con el nivel de la serie.
 
-* **Ecuación para el pronóstico:**
+-   **Ecuación para el pronóstico:**
 
 $$
 \hat{y}_{t+h} = l_t + hb_t + s_{t+h-m(k+1)}
 $$
 
-* **Ecuación del nivel:**
-$$
-l_t = \alpha (y_t - s_{t-m}) + (1- \alpha)(l_{t-1} + b_{t-1})
-$$
+-   **Ecuación del nivel:** $$
+    l_t = \alpha (y_t - s_{t-m}) + (1- \alpha)(l_{t-1} + b_{t-1})
+    $$
 
-* **Ecuación de la tendencia:**
+-   **Ecuación de la tendencia:**
 
 $$
 b_t = \beta^*(l_t-l_{t-1}) + (1-\beta^*)b_{t-1}
 $$
 
-* **Ecuación de la estacionalidad:**
+-   **Ecuación de la estacionalidad:**
 
 $$
 s_t = \gamma(y_t-l_{t-1}-b_{t-1})+(1-\gamma)s_{t-m}
 $$
 
 Para agregar el parámetro estacional, basta con incluir `season()` dentro del modelo y especificar `"A"` y `"M"` para aditivo o multiplicativo, respectivamente.
- 
+
 ```{r vacaciones season}
 aus_holidays <- tourism %>%
   filter(Purpose == "Holiday") %>%
@@ -308,7 +300,7 @@ fc %>%
   ylab("Overnight trips (millions)") +
   scale_color_brewer(type = "qual", palette = "Dark2")
 ```
- 
+
 ### Modelo de Holt-Winters amortiguado
 
 Se puede amortiguar cualquiera de las dos variantes del modelo Holt-Winters.
@@ -361,8 +353,6 @@ sth_cross_ped %>%
   accuracy()
 ```
 
-
-
 ## Variedad de métodos de suavización exponencial
 
 Podemos resumir los métodos de suavización exponencial en la siguiente tabla:
@@ -375,7 +365,6 @@ $$\begin{array}{|llll|}
 \mathrm{A}_{d} \text { (Additive damped) } & \left(\mathrm{A}_{d}, \mathrm{N}\right) & \left(\mathrm{A}_{d}, \mathrm{A}\right) & \left(\mathrm{A}_{d}, \mathrm{M}\right) \\
 \hline
 \end{array}$$
-
 
 Algunas combinaciones que tienen un nombre específico son:
 
@@ -396,8 +385,6 @@ Utilizaremos algunos de los ejemplos vistos anteriormente para comparar el desem
 ### Producción de cerveza australiana
 
 Ya habíamos visto que, de los métodos de referencia, el mejor modelo era el Naïve estacional:
-
-
 
 ```{r beer fcst - benchmark}
 recent_production <- aus_production %>% filter(year(Quarter) >= 1992)
@@ -453,6 +440,7 @@ gg_beer_zoom <-  gg_beer + tidyquant::coord_x_date(xlim = c("2007-10-01","2010-0
 # Los errores de pronóstico
 accuracy(beer_fc, recent_production)
 ```
+
 El mejor pronóstico es obtenido con el modelo Holt-Winters amortiguado, ya que tiene el menor error de predicción (en cualquiera de las métricas RMSE, MAE, MAPE).
 
 ```{r}
@@ -463,7 +451,6 @@ beer_fc %>%
   ggtitle("Forecast for quarterly beer production using the Damped Holt Winters method") +
   guides(colour=guide_legend(title="Forecast"))
 ```
-
 
 ### Empleo en el sector minorista de EEUU
 
@@ -505,12 +492,13 @@ gg_usret_zoom <-  gg_usret + tidyquant::coord_x_date(xlim = c("2018-01-01","2019
 accuracy(us_retail_fc, us_retail_employment)
 
 ```
+
 En este caso, al comparar los modelos de suavización exponencial vs. el modelo de referencia (Naïve estacional), vemos que no logran superar su desempeño. Al menos los modelos propuestos (*Recuerden que hay muchas combinaciones posibles de los modelos de suavización que se pueden probar, dependiendo el caso*).
 
 Probaremos aplicando un modelo de descomposición STL para modelar la serie en dos componentes:
 
-1. Para el componente estacional.
-2. Para la serie desestacionalizada, usamos una suaviación exponencial simple.
+1.  Para el componente estacional.
+2.  Para la serie desestacionalizada, usamos una suaviación exponencial simple.
 
 ```{r SNAIVE v decomp + ETS, fig.width=7, fig.height=8}
 us_retail_fit <- us_retail_train %>%
@@ -579,8 +567,6 @@ gg_usret_zoom <-  gg_usret + tidyquant::coord_x_date(xlim = c("2018-01-01","2019
 accuracy(us_retail_fc2, us_retail_employment)
 ```
 
-
-
 ### PIB de Suecia
 
 Ahora tomamos una serie que no tenga un patrón estacional marcado. Intentaremos pronosticar el PIB de Suecia mediante suavización exponencial y utilizareos de referencia el modelo de Drift.
@@ -621,18 +607,19 @@ gg_suecia_zoom <-  gg_suecia + coord_cartesian(xlim = c(2000,2017), ylim = c(2e+
 # Los errores de pronóstico
 accuracy(suecia_fc, suecia)
 ```
-En este caso, el método de referencia (Drift) también dio mejores resultados que la suavización exponencial. 
+
+En este caso, el método de referencia (Drift) también dio mejores resultados que la suavización exponencial.
 
 Debemos recordar que cualquier modelo que estimemos asume que el comportamiento futuro de la serie será similar al histórico. En este caso, el primer año de pronóstico es 2008, año de la crisis inmobiliaria que afectó a prácticamente todo el mundo. Nuestro modelo no tenía manera de predecirlo, y por lo tanto, falló.
 
-
 ## Tarea
-* Seleccionar dos series de tiempo vistas en clase y realizar lo siguiente:
-* De preferencia, que una serie de tiempo tenga un patrón estacional y la otra sin estacionalidad.
-    i) Seleccionar el método de referencia que mejores resultados haya dado para cada serie.
+
+-   Seleccionar dos series de tiempo vistas en clase y realizar lo siguiente:
+-   De preferencia, que una serie de tiempo tenga un patrón estacional y la otra sin estacionalidad.
+    i)  Seleccionar el método de referencia que mejores resultados haya dado para cada serie.
     ii) Modelar cada serie de tiempo mediante suavización exponencial. Pueden utilizar dos o tres variantes del modelo, según sea el caso.
     iii) Llevar a cabo el proceso completo de pronóstico.
     iv) Analizar si los modelos de suavización exponencial superan a los métodos de referencia.
-        - En caso de que el método de referencia sea mejor, intenten cambiar las características de la suavización exponencial, logrando un mejor pronóstico.
-* Si requieren realizar alguna transformación matemática a los datos para estabilizar la varianza, adelante.
-* Se puede realizar la descomposición de la serie en estacionalidad y serie desestacionalizada para intentar obtener mejores pronósticos.
+        -   En caso de que el método de referencia sea mejor, intenten cambiar las características de la suavización exponencial, logrando un mejor pronóstico.
+-   Si requieren realizar alguna transformación matemática a los datos para estabilizar la varianza, adelante.
+-   Se puede realizar la descomposición de la serie en estacionalidad y serie desestacionalizada para intentar obtener mejores pronósticos.
