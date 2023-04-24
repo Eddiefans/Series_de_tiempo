@@ -1,22 +1,22 @@
 ---
 title: "Capítulos 2-5 R4DS"
 author: "Eddie Aguilar"
-format: html
-editor: visual
- html:
+format:
+  html:
     self-contained: true
+editor: source
+  
 ---
 
 # 2. Introducción
 
-Esta lectura habla de la exploración de datos. 
+Esta lectura habla de la exploración de datos.
 
-La exploración de datos es el método de ver datos y poder crear hipótesis a partir de ellos. 
-Y este proceso se divide en tres parte importantes:
+La exploración de datos es el método de ver datos y poder crear hipótesis a partir de ellos. Y este proceso se divide en tres parte importantes:
 
-- Visualización, gráficar los datos y de esta forma, obtener un resultado instantaneo.
-- Transformación, implementar técnicas de selección y filtros para manejar datos. 
-- Analisis de datos, combinar visualización y transformación.
+-   Visualización, gráficar los datos y de esta forma, obtener un resultado instantaneo.
+-   Transformación, implementar técnicas de selección y filtros para manejar datos.
+-   Analisis de datos, combinar visualización y transformación.
 
 #3. Visualización
 
@@ -32,18 +32,19 @@ mpg
 ggplot(mpg) + 
   geom_point(aes(x = displ, y = hwy))
 ```
-Esta gráfica muestra una relación negativa entre el tamaño de cilindros del motor y la eficiencia del combustible.
 
+Esta gráfica muestra una relación negativa entre el tamaño de cilindros del motor y la eficiencia del combustible.
 
 Vemos que hay valores no tan lógicos a la derecho de la gráfica, para darle una razón a este comportamiento, veremos la clase a la que pertenece cada coche, lo haremos mediante la implementación de aesthetics:
 
 Por color:
+
 ```{r}
 ggplot(data = mpg) + 
   geom_point(mapping = aes(x = displ, y = hwy, color = class))
 ```
 
-Por tamaño: 
+Por tamaño:
 
 ```{r}
 ggplot(data = mpg) + 
@@ -58,28 +59,25 @@ ggplot(data = mpg) +
 
 ```
 
-Por forma: 
+Por forma:
 
 ```{r}
 ggplot(data = mpg) + 
   geom_point(mapping = aes(x = displ, y = hwy, shape = class))
 ```
 
-
-Como podemos ver, al usar shapes no nos gráfica las SUVs, esto se debe a que ggplot2 solo usará 6 formas y después de eso no graficará lo demás. 
+Como podemos ver, al usar shapes no nos gráfica las SUVs, esto se debe a que ggplot2 solo usará 6 formas y después de eso no graficará lo demás.
 
 ## Errores
 
 Al programar pueden existir muchos errores, uno de los más comunes al usar ggplot es poner el signo + al inicio de una línea:
 
 ```{r}
-ggplot(data = mpg) 
-+ geom_point(mapping = aes(x = displ, y = hwy))
+#ggplot(data = mpg) 
+# + geom_point(mapping = aes(x = displ, y = hwy))
 ```
 
-
 ## Facets
-
 
 ```{r}
 ggplot(data = mpg) + 
@@ -87,8 +85,7 @@ ggplot(data = mpg) +
   facet_wrap(~ class, nrow = 2)
 ```
 
-
-## Objeots geometricos 
+## Objeots geometricos
 
 ```{r}
 ggplot(data = mpg) + 
@@ -97,7 +94,6 @@ ggplot(data = mpg) +
 ggplot(data = mpg) + 
   geom_smooth(mapping = aes(x = displ, y = hwy))
 ```
-
 
 No todos los aesthetics funcionan con todos los geoms:
 
@@ -128,11 +124,10 @@ ggplot(data = diamonds) +
   geom_bar(mapping = aes(x = cut))
 ```
 
+Hay diferentes tipos de gráficas y cada una usa una forma diferente los datos ingresados para mostrarlos en la gráfica. A este algoritmo para trsansformar nuevos datos para la gráfica se llama stat.
 
-Hay diferentes tipos de gráficas y cada una usa una forma diferente los datos ingresados para mostrarlos en la gráfica. A este algoritmo para trsansformar nuevos datos para la gráfica se llama stat. 
-
-- Gráficas de barras e histogramas usan categorías y meten todos los datos dentro de ellos. 
-- Smoothers hacen un modelo y crea predicciones. 
+-   Gráficas de barras e histogramas usan categorías y meten todos los datos dentro de ellos.
+-   Smoothers hacen un modelo y crea predicciones.
 
 El stat que usa geom_bar se llama stat_count (se puede ver viendo ?geom_bar)
 
@@ -143,7 +138,7 @@ ggplot(data = diamonds) +
   stat_count(mapping = aes(x = cut))
 ```
 
-Override el stat: 
+Override el stat:
 
 ```{r}
 demo <- tribble(
@@ -182,7 +177,6 @@ ggplot(data = diamonds) +
   geom_bar(mapping = aes(x = cut, fill = cut))
 ```
 
-
 ```{r}
 ggplot(data = diamonds) + 
   geom_bar(mapping = aes(x = cut, fill = clarity))
@@ -196,7 +190,6 @@ ggplot(data = diamonds, mapping = aes(x = cut, fill = clarity)) +
 ggplot(data = diamonds, mapping = aes(x = cut, colour = clarity)) + 
   geom_bar(fill = NA, position = "identity")
 ```
-
 
 position = "fill" hará que las varras sean de la misma altura, así verpoder ver la proporción de los bloques:
 
@@ -212,8 +205,6 @@ ggplot(data = diamonds) +
   geom_bar(mapping = aes(x = cut, fill = clarity), position = "dodge")
 ```
 
-
-
 Otro ajuste para puntos es el usar el total de puntos generados, en vez de contraer los puntos y redondearlos: (jitter)
 
 ```{r}
@@ -221,11 +212,9 @@ ggplot(data = mpg) +
   geom_point(mapping = aes(x = displ, y = hwy), position = "jitter")
 ```
 
-
-
 ## Sistemas coordinados
 
-- Coord_flip() intercambia el eje x y el eje y:
+-   Coord_flip() intercambia el eje x y el eje y:
 
 ```{r}
 ggplot(data = mpg, mapping = aes(x = class, y = hwy)) + 
@@ -235,7 +224,7 @@ ggplot(data = mpg, mapping = aes(x = class, y = hwy)) +
   coord_flip()
 ```
 
-- coord_quizkmap() establece la escala correcta para mapas: 
+-   coord_quizkmap() establece la escala correcta para mapas:
 
 ```{r}
 nz <- map_data("nz")
@@ -248,7 +237,7 @@ ggplot(nz, aes(long, lat, group = group)) +
   coord_quickmap()
 ```
 
-- coord_polar() usa coordenadas polares:
+-   coord_polar() usa coordenadas polares:
 
 ```{r}
 bar <- ggplot(data = diamonds) + 
@@ -268,6 +257,8 @@ bar + coord_polar()
 
 ## Funciones
 
+
+
 ```{r}
 seq(1, 10)
 
@@ -277,5 +268,180 @@ Una asignación con paréntesis, imprime la variable:
 
 ```{r}
 (y <- seq(1, 10, length.out = 5))
+```
+
+
+# 5. Transformación de datos
+
+Prerequisitos
+
+```{r}
+library(nycflights13)
+library(tidyverse)
+flights
+```
+
+
+Tibbles:
+
+- int: enteros
+- dbl: dobles, numeros reales
+- chr: strings
+- dttm: date-times
+- lgl: booleano
+- fctr: factor (variables categoricas de R)
+- date: dates
+
+## Operadores logicos
+
+& = and
+| = or 
+! = not
+
+## Operadores modulares
+
+%%  = Módulo
+%/% = División entera
+
+## Dplyr basics
+
+### filter()
+
+```{r}
+filter(flights, month == 1, day == 1)
+```
+
+Mantener valores vacios (NA):
+```{r}
+filter(flights, is.na(month) | month > 1)
+```
+
+
+### arrange()
+
+```{r}
+arrange(flights, year, dep_time)
+arrange(flights, desc(dep_time))
+```
+
+
+
+
+### select()
+
+```{r}
+# Select columns by name
+select(flights, year, month, day)
+
+# Select all columns between year and day (inclusive)
+select(flights, year:day)
+
+# Select all columns except those from year to day (inclusive)
+select(flights, -(year:day))
+```
+
+
+Priorizar columnas al inicio del tibble con everything():
+```{r}
+select(flights, time_hour, air_time, everything())
+```
+
+
+
+There are a number of helper functions you can use within select():
+
+- starts_with("abc"): matches names that begin with “abc”.
+
+- ends_with("xyz"): matches names that end with “xyz”.
+
+- contains("ijk"): matches names that contain “ijk”.
+
+- matches("(.)\\1"): selects variables that match a regular expression. This one matches any variables that contain repeated characters. 
+
+num_range("x", 1:3): matches x1, x2 and x3.
+
+### mutate()
+
+Añadir variables
+
+```{r}
+flights_sml <- select(flights, 
+  year:day, 
+  ends_with("delay"), 
+  distance, 
+  air_time
+)
+mutate(flights_sml,
+  gain = dep_delay - arr_delay,
+  speed = distance / air_time * 60
+)
+```
+
+Usar transmutate() si solo se quiere mantener las nuevas variables hechas en la función.
+
+Cumulative: 
+
+```{r}
+(x <- 1:10)
+cumsum(x)
+cummean(x)
+```
+Rankings:
+
+```{r}
+y <- c(1, 2, 2, NA, 3, 4)
+min_rank(y)
+min_rank(desc(y))
+row_number(y)
+dense_rank(y)
+percent_rank(y)
+cume_dist(y)
+```
+
+
+### summarise()
+
+Colapsa todo a una sola fila
+
+```{r}
+summarise(flights, delay = mean(dep_delay, na.rm = TRUE))
+```
+
+
+Para explotar el funcionamiento de summarise() es recomendable usarlo con group_by:
+
+```{r}
+by_day <- group_by(flights, year, month, day)
+summarise(by_day, delay = mean(dep_delay, na.rm = TRUE))
+```
+
+Counts dentro de summarise:
+
+Para ver el número de una categoría: (n())
+Para ver el número de una categoría sin valores vacíos: (sum(!is.na(x))).
+Para ver el número de una categoría sin repetir: n_distinct(x)
+
+#### Grouping con variables multiples:
+
+```{r}
+daily <- group_by(flights, year, month, day)
+(per_day   <- summarise(daily, flights = n()))
+(per_month <- summarise(per_day, flights = sum(flights)))
+(per_year  <- summarise(per_month, flights = sum(flights)))
+```
+
+#### Summarise combinados con otras funciones:
+
+```{r}
+flights_sml %>% 
+  group_by(year, month, day) %>%
+  filter(rank(desc(arr_delay)) < 10)
+```
+
+```{r}
+popular_dests <- flights %>% 
+  group_by(dest) %>% 
+  filter(n() > 365)
+popular_dests
 ```
 
