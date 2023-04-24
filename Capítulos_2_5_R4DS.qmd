@@ -5,7 +5,6 @@ format:
   html:
     self-contained: true
 editor: source
-  
 ---
 
 # 2. Introducción
@@ -257,8 +256,6 @@ bar + coord_polar()
 
 ## Funciones
 
-
-
 ```{r}
 seq(1, 10)
 
@@ -270,7 +267,6 @@ Una asignación con paréntesis, imprime la variable:
 (y <- seq(1, 10, length.out = 5))
 ```
 
-
 # 5. Transformación de datos
 
 Prerequisitos
@@ -281,27 +277,23 @@ library(tidyverse)
 flights
 ```
 
-
 Tibbles:
 
-- int: enteros
-- dbl: dobles, numeros reales
-- chr: strings
-- dttm: date-times
-- lgl: booleano
-- fctr: factor (variables categoricas de R)
-- date: dates
+-   int: enteros
+-   dbl: dobles, numeros reales
+-   chr: strings
+-   dttm: date-times
+-   lgl: booleano
+-   fctr: factor (variables categoricas de R)
+-   date: dates
 
 ## Operadores logicos
 
-& = and
-| = or 
-! = not
+& = and \| = or ! = not
 
 ## Operadores modulares
 
-%%  = Módulo
-%/% = División entera
+%% = Módulo %/% = División entera
 
 ## Dplyr basics
 
@@ -312,10 +304,10 @@ filter(flights, month == 1, day == 1)
 ```
 
 Mantener valores vacios (NA):
+
 ```{r}
 filter(flights, is.na(month) | month > 1)
 ```
-
 
 ### arrange()
 
@@ -323,9 +315,6 @@ filter(flights, is.na(month) | month > 1)
 arrange(flights, year, dep_time)
 arrange(flights, desc(dep_time))
 ```
-
-
-
 
 ### select()
 
@@ -340,23 +329,21 @@ select(flights, year:day)
 select(flights, -(year:day))
 ```
 
-
 Priorizar columnas al inicio del tibble con everything():
+
 ```{r}
 select(flights, time_hour, air_time, everything())
 ```
 
-
-
 There are a number of helper functions you can use within select():
 
-- starts_with("abc"): matches names that begin with “abc”.
+-   starts_with("abc"): matches names that begin with "abc".
 
-- ends_with("xyz"): matches names that end with “xyz”.
+-   ends_with("xyz"): matches names that end with "xyz".
 
-- contains("ijk"): matches names that contain “ijk”.
+-   contains("ijk"): matches names that contain "ijk".
 
-- matches("(.)\\1"): selects variables that match a regular expression. This one matches any variables that contain repeated characters. 
+-   matches("(.)\\1"): selects variables that match a regular expression. This one matches any variables that contain repeated characters.
 
 num_range("x", 1:3): matches x1, x2 and x3.
 
@@ -379,13 +366,14 @@ mutate(flights_sml,
 
 Usar transmutate() si solo se quiere mantener las nuevas variables hechas en la función.
 
-Cumulative: 
+Cumulative:
 
 ```{r}
 (x <- 1:10)
 cumsum(x)
 cummean(x)
 ```
+
 Rankings:
 
 ```{r}
@@ -398,7 +386,6 @@ percent_rank(y)
 cume_dist(y)
 ```
 
-
 ### summarise()
 
 Colapsa todo a una sola fila
@@ -406,7 +393,6 @@ Colapsa todo a una sola fila
 ```{r}
 summarise(flights, delay = mean(dep_delay, na.rm = TRUE))
 ```
-
 
 Para explotar el funcionamiento de summarise() es recomendable usarlo con group_by:
 
@@ -417,9 +403,7 @@ summarise(by_day, delay = mean(dep_delay, na.rm = TRUE))
 
 Counts dentro de summarise:
 
-Para ver el número de una categoría: (n())
-Para ver el número de una categoría sin valores vacíos: (sum(!is.na(x))).
-Para ver el número de una categoría sin repetir: n_distinct(x)
+Para ver el número de una categoría: (n()) Para ver el número de una categoría sin valores vacíos: (sum(!is.na(x))). Para ver el número de una categoría sin repetir: n_distinct(x)
 
 #### Grouping con variables multiples:
 
@@ -444,4 +428,3 @@ popular_dests <- flights %>%
   filter(n() > 365)
 popular_dests
 ```
-
