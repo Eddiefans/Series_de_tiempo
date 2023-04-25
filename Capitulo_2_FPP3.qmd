@@ -200,7 +200,7 @@ That´s why the range (blue line) is really important to graph, which is the 95%
 
 # Exercises
 
-1. 
+## 1. 
 
 ```{r}
 autoplot(aus_production, Bricks)
@@ -209,11 +209,88 @@ autoplot(gafa_stock, Close)
 autoplot(vic_elec, Demand)
 ```
 
-2.
+## 2.
 
 ```{r}
 group_by(gafa_stock, Symbol) %>% 
   filter(Close == max(Close)) %>% 
   select(Symbol, Date, Close)
+```
+
+## 3. 
+
+a.
+```{r}
+tute1 <- readr::read_csv("Excels/tute1.csv")
+View(tute1)
+```
+b. 
+```{r}
+(tute <- tute1 |>
+  mutate(Quarter = yearquarter(Quarter)) |>
+  as_tsibble(index = Quarter))
+```
+
+c.
+```{r}
+tute |>
+  pivot_longer(-Quarter) |>
+  ggplot(aes(x = Quarter, y = value, colour = name)) +
+  geom_line() +
+  facet_grid(name ~ ., scales = "free_y")
+```
+## 4. 
+
+a. 
+```{r}
+install.packages("USgas")
+library("USgas")
+```
+b. 
+```{r}
+(us_total |> 
+  as_tsibble(index = year, key = state) -> us_total)
+```
+
+c. 
+```{r}
+filter(us_total, state %in% c("Maine", "Vermont", "New Hampshire", "Massachusetts", "Connecticut", "Rhode Island")) |> 
+  ggplot(aes(x = year, y = y)) +
+  geom_line(aes(color = state)) + 
+  labs(y = "Gas consumption", title = "Annual natural gas consumption")
+```
+## 5. 
+
+a. 
+
+```{r}
+tourism <- readxl::read_excel("Excels/tourism.xlsx")
+```
+
+b.
+```{r}
+
+(mutate(tourism, Quarter = yearquarter(Quarter)) |> 
+  as_tsibble(index = Quarter, key = c(Region, State, Purpose)) -> tourism)
+
+tsibble::tourism
+```
+
+c. 
+
+```{r}
+
+group_by(tourism, Region, Purpose) |> 
+  filter(Trips == max(Trips)) |> 
+  select(-State) |> 
+  arrange(desc(Trips))
+
+# Melbourne, Visiting
+```
+
+d. 
+```{r}
+(state_tourism <- group_by(tourism, State) |> 
+   summarise())
 ```
 
