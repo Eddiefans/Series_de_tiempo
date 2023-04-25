@@ -302,4 +302,90 @@ autoplot(aus_arrivals)
 gg_season(aus_arrivals)
 gg_subseries(aus_arrivals)
 ```
+As we can see all 4 different origins have a seasonal pattern, some more than others, with UK being the one with more oscillation every year and US the less, this means there are certain events or weather between UK and Asutralia that makes people travel to Australia depending on the time of the year. 
 
+We can also see that Japan had an increasing trend until 1996, all the others present and slight or more visible increasing trend all along. 
+
+In the seasonal plot we can confirm all the previous observations made about seasonality and can also see when the seasonlity comes from (quarters of the year) for each country.
+
+
+## 7. 
+
+
+```{r}
+set.seed(352)
+retail <- aus_retail |>
+  filter(`Series ID` == sample(aus_retail$`Series ID`,1))
+
+retail
+```
+
+```{r}
+autoplot(retail, Turnover)
+gg_season(retail, Turnover)
+gg_subseries(retail, Turnover)
+gg_lag(retail, Turnover, geom = "point")
+autoplot(ACF(retail, Turnover))
+```
+
+As we can see in our initial plot, we have Victoria's retail turnover seperated by month, we can notice an obviuos upwards trend which is probably a little bit exponential by the end of the graph, we can also see an seasonality which is bigger as the amount of turnovers are increasing (proportional).
+
+In the seasonal plot we can spot where the spikes of seasonality are, which are due to holidays, we can also see a more irregular spike through the years in summer break. 
+
+In the seasonal subseries plot we can confirm the proportion between spikes and amount of turnovers with december being the month with more turnovers but also, having an increase in turnovers throughout the years. 
+
+Due to the combination of strong seasonality and upwards trend, all lags between several months have a very strong autocorrelation. 
+
+We can confirm when we plot the autocorrelation function, we can see how every value is way above the range, due to strong upwards trend, and how there a few spikes every 12 months, due to seasonality.
+
+## 8.
+
+
+
+```{r}
+(us_employment <- filter(us_employment, Title == "Total Private"))
+autoplot(us_employment, Employed)
+gg_season(us_employment, Employed)
+gg_subseries(us_employment, Employed)
+gg_lag(us_employment, Employed, geom = "point")
+autoplot(ACF(us_employment, Employed))
+```
+
+
+```{r}
+aus_production
+autoplot(aus_production, Bricks)
+gg_season(aus_production, Bricks)
+gg_subseries(aus_production, Bricks)
+gg_lag(aus_production, Bricks, geom = "point")
+autoplot(ACF(aus_production, Bricks))
+```
+
+
+```{r}
+(pelt = pelt %>% as_tsibble(index = Year))
+autoplot(pelt, Hare)
+gg_lag(pelt, Hare, geom = "point")
+autoplot(ACF(pelt, Hare))
+```
+
+
+
+```{r}
+(PBS <- group_by(PBS, ATC2) %>% filter(ATC2 == "H02") %>% select(-Concession, -Type))
+autoplot(PBS, Cost)
+gg_season(PBS, Cost)
+gg_subseries(PBS, Cost)
+gg_lag(PBS, Cost, geom = "point")
+autoplot(ACF(PBS, Cost))
+```
+
+
+```{r}
+us_gasoline
+autoplot(us_gasoline, Barrels)
+gg_season(us_gasoline, Barrels)
+gg_subseries(us_gasoline, Barrels)
+gg_lag(us_gasoline, Barrels, geom = "point")
+autoplot(ACF(us_gasoline, Barrels))
+```
