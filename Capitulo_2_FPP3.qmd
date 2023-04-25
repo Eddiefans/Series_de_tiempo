@@ -273,7 +273,7 @@ b.
 (mutate(tourism, Quarter = yearquarter(Quarter)) |> 
   as_tsibble(index = Quarter, key = c(Region, State, Purpose)) -> tourism)
 
-tsibble::tourism
+tsibble::tourism 
 ```
 
 c. 
@@ -291,6 +291,15 @@ group_by(tourism, Region, Purpose) |>
 d. 
 ```{r}
 (state_tourism <- group_by(tourism, State) |> 
-   summarise())
+   summarise(total_Trips = sum(Trips)))
+```
+
+## 6. 
+
+```{r}
+aus_arrivals
+autoplot(aus_arrivals)
+gg_season(aus_arrivals)
+gg_subseries(aus_arrivals)
 ```
 
