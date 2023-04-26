@@ -243,7 +243,6 @@ tute |>
 
 a. 
 ```{r}
-install.packages("USgas")
 library("USgas")
 ```
 b. 
@@ -350,7 +349,7 @@ gg_subseries(us_employment, Employed)
 gg_lag(us_employment, Employed, geom = "point")
 autoplot(ACF(us_employment, Employed))
 ```
-
+Strong upwards trend, very small seasonality, we can confirm this in the seasonal plot, though there is an slight drop in the trend around 2010, we can see this in the seasonal subseries plot, it has strong positive correlation due to seasonality and trend, we can see how ACF is being affected by the strong trend and there is not much difference in multiples of 12 (annual) due to an small seasonality.
 
 ```{r}
 aus_production
@@ -361,6 +360,7 @@ gg_lag(aus_production, Bricks, geom = "point")
 autoplot(ACF(aus_production, Bricks))
 ```
 
+We can see an increasing trend in the first half, then two important drops, and after that it stayed very regular in a general perspective, has a seasonality which varies a little bit everytime. Looking at the seasonal plot we can see a very confirm the highs and lows in the second half and how seasonality stops being simple compared to the first half. Due to loss of strong trend and not very defined seasonality, the correlations and lags are not very strong. But we can also see how there is a seasonality every four-month period.
 
 ```{r}
 (pelt = pelt %>% as_tsibble(index = Year))
@@ -368,18 +368,23 @@ autoplot(pelt, Hare)
 gg_lag(pelt, Hare, geom = "point")
 autoplot(ACF(pelt, Hare))
 ```
-
-
+This data is annual, so it's  unfair to say it has seasonality throughout the years due to the lack of information in each year. Nevertheless, we can try to analyze this data, and looking at the line plot and acf plot, we can notice a seasonality every 10 years, with a whole cycle of a drop and a spike.
 
 ```{r}
-(PBS <- group_by(PBS, ATC2) %>% filter(ATC2 == "H02") %>% select(-Concession, -Type))
-autoplot(PBS, Cost)
-gg_season(PBS, Cost)
-gg_subseries(PBS, Cost)
-gg_lag(PBS, Cost, geom = "point")
-autoplot(ACF(PBS, Cost))
-```
+(PB <- tsibbledata::PBS %>% 
+   as_tibble() %>% 
+   group_by(Month, ATC2) %>% 
+   summarise(Cost = sum(Cost)) %>% 
+   as_tsibble(index = Month, key = ATC2) %>% 
+   filter(ATC2 == "H02"))
 
+autoplot(PB, Cost)
+gg_season(PB, Cost)
+gg_subseries(PB, Cost)
+gg_lag(PB, Cost, geom = "point")
+autoplot(ACF(PB, Cost))
+```
+We can see a clear and very strong seasonlity with a big drop in January and recovery proccess the whole year until it ends in the same point. This with a general upwards trend. In the seasonal plot we can see how the drop is very clean and spontenaous, and how the whole year it recovers with very different highs and lows. We can see in ACF how the annual seasonality is very strong, and all the other correlations are very weak due to very different values throughout the year.
 
 ```{r}
 us_gasoline
@@ -389,3 +394,54 @@ gg_subseries(us_gasoline, Barrels)
 gg_lag(us_gasoline, Barrels, geom = "point")
 autoplot(ACF(us_gasoline, Barrels))
 ```
+We can see a general upwards trend which slightly stops and changes at the end of the graphic, we can see a lot of changes in the seasonal plot due to weekly data. Strong correlations due to seasonality and trend.
+
+## 9.
+
+2A, 3D, 1B, 4C
+
+
+## 10.
+
+```{r}
+aus_live <- filter(aus_livestock, year(Month) >= 1990 & year(Month) <= 1995, State == "Victoria", Animal == "Pigs")
+autoplot(aus_live, Count)
+autoplot(ACF(aus_live, Count))
+```
+We can see a very obvious cahnge, when we filter the data, we see a strong upwards trend, this graph can actually be a cycle in the whole picture and life of the data instead of a general trend, We reveal this when we use all the data. This makes the range of the ACF be bigger and closer to the data in the filtered one.
+
+
+## 11. 
+
+a.
+
+```{r}
+(gafa_stock |>
+  filter(Symbol == "GOOG", year(Date) >= 2018) |>
+  mutate(trading_day = row_number()) %>% 
+  mutate(diff = difference(Close)) -> dgoog1)
+(dgoog <- gafa_stock |>
+  filter(Symbol == "GOOG", year(Date) >= 2018) |>
+  mutate(trading_day = row_number()) |>
+  update_tsibble(index = trading_day, regular = TRUE) |>
+  mutate(diff = difference(Close)))
+```
+
+b.
+
+Because a stock doesn't have a continous index due to not having any data in the weekends, that's why we change to trade number and the data can be continuous. We can see this change in the line plot. But we cannot really see a difference in ACF.
+c.
+
+```{r}
+autoplot(dgoog, Close)
+autoplot(ACF(dgoog, Close))
+
+autoplot(dgoog1, Close)
+autoplot(ACF(dgoog1, Close))
+
+
+```
+
+d.
+
+In a general point, there is no real difference between these two, the correlations graphed are the same.
