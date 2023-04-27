@@ -1,0 +1,527 @@
+---
+title: "Tarea pronósticos 05"
+author: "Eddie Aguilar"
+format:
+  html:
+    self-contained: true
+editor: source
+---
+
+
+```{r}
+library("easypackages")
+packages("tidyverse","fpp3", "tsibble", "feasts","fable", "patchwork")
+```
+
+
+# Flujo de trabajo limpio de pronóstico
+
+- Preparación de los datos (limpieza)
+- Gráfica de los datos (visualización)
+- Definición del modelo (especificación)
+- Entrenamiento del modelo (estimación)
+- Revisar el desempeño del modelo (evaluación)
+- Producir pronósticos
+
+
+## Preparación de los datos (limpieza)
+
+Cargar datos en R, o incluso omitir los datos vacíos (NA), filtrado de la serie  (mediante paquetería Tsibble).
+
+## Gráfica de los datos (visualización)
+
+```{r}
+global_economy %>%
+  filter(Country == "Sweden") %>%
+  autoplot(GDP) +
+    ggtitle("PIB de Suecia") + ylab("$US billions")
+```
+
+
+## Definición del modelo (especificación)
+
+Describir el modelo. Hay distintos tipos, se usará por ejemplo, un modelo lineal de series de tiempo con TLSM:
+
+```{r}
+TSLM(GDP  ~ trend())
+```
+
+## Entrenamiento del modelo (estimación)
+
+Una vez se define el modelo, lo que sigue es entrenar al modelo. Lo que significa pasarle los datos para que, estdísticamente, encuentre los parámetros que realizan el mejor ajuste posible. 
+
+```{r}
+fit <- global_economy %>%
+  model(Modelo_tendencia = TSLM(GDP ~ trend()))
+```
+Ahora tenemos un modelo lineal ajustado y el objeto resultante es un mable (model table).
+
+```{r}
+fit
+```
+
+## Revisar el desempeño del modelo (evaluación)
+
+Ver como se ajusta el modelo a los datos y compararlo con otros modelos.
+
+## Producir pronósticos
+
+Una vez tenemos un modelo ajustado, podemos hacer pronósticos. Usamos forecast(), h = periodo a pronosticar 
+
+```{r}
+fcst <- fit %>% forecast(h = 36) # h = "3 years"
+fcst
+```
+
+# Métodos sencillos de pronóstico
+
+Conocidos como *benchmark* son básicos pero pueden ser muy utiles.
+
+```{r}
+bricks <- aus_production %>% filter_index("1970" ~ "2004")
+bricks
+```
+
+```{r}
+bricks %>% autoplot(Bricks)
+```
+
+## Método del promedio (media)
+
+En este pronósitco, las predicciones de todos los valores futuros son la media de los datos históricos. 
+
+```{r}
+bricks %>% model(MEAN(Bricks))
+```
+
+## Método ingenuo (Naive method)
+
+Se toma el último valor como el pronóstico para todos los valores futuros. 
+También se les conoce como pronósitcos de caminata aleatoria, ya que son óptimos en una serie que siga una.
+
+```{r}
+bricks %>% model(NAIVE(Bricks),
+                 RW(Bricks)) # hace exactamente lo mismo que NAIVE()
+```
+
+## Método ingenuo estacional (seasonal Naive)
+
+Se le agrega un componente a Naive para lidiar con datos altamente estacionales.
+
+```{r}
+bricks %>% model(SNAIVE(Bricks))
+```
+
+```{r}
+vic_elec %>% 
+  autoplot(Demand) %>% 
+  plotly::ggplotly()
+```
+
+```{r}
+vic_elec %>% 
+  model(SNAIVE(Demand)) %>% 
+  forecast(h = "1 day") %>% 
+  autoplot(vic_elec %>% filter_index("2014-12-30" ~ .))
+```
+
+## Método de la deriva (drift)
+
+Variación de Naive que permite que aumente o disminuya el pronótico en el tiempo. El aumento del cambio es el cambio promedio en los datos históricos. 
+
+```{r}
+bricks %>% model(
+  RW(Bricks ~ drift())
+)
+```
+
+## Ejemplos
+
+```{r}
+# Set training data from 1992 to 2006
+train <- aus_production %>% filter_index("1992 Q1" ~ "2006 Q4")
+# Fit the models
+beer_fit <- train %>%
+  model(
+    Mean             = MEAN(Beer),
+    `Naïve`          = NAIVE(Beer),
+    `Seasonal naïve` = SNAIVE(Beer),
+    Drift            = RW(Beer ~ drift())
+  )
+# Generate forecasts for 14 quarters
+beer_fc <- beer_fit %>% forecast(h= 14)
+
+# Plot forecasts against actual values
+beer_fc %>%
+  autoplot(filter_index(aus_production, "1992 Q1" ~ .), level = NULL) +
+  ggtitle("Forecasts for quarterly beer production") +
+  xlab("Year") + ylab("Megalitres") +
+  guides(colour=guide_legend(title="Forecast")) +
+  geom_vline(xintercept = as.Date("2007-01-01"), color = "firebrick",
+             linetype = "dashed") +
+  annotate("label", x = c(as.Date("2003-01-01"),as.Date("2009-01-01")),
+           y = 550, label = c("Train set", "Test set"),
+           color = c("black","blue"))
+```
+
+```{r}
+beer_fc %>%
+  filter(.model == "Seasonal naïve") %>% 
+  autoplot(filter_index(aus_production, "1992 Q1" ~ .)) +
+  ggtitle("Seasonal naive forecast for quarterly beer production") +
+  xlab("Quarter") + ylab("Megalitres") +
+  geom_vline(xintercept = as.Date("2007-01-01"), color = "firebrick", linetype = "dashed") +
+  annotate("label", x = c(as.Date("2003-01-01"), as.Date("2009-01-01")), y = 550, label = c("Train set", "Test set"), color = c("black", "blue"))
+```
+
+Otro ejemplo:
+
+```{r}
+gafa_stock %>% distinct(Symbol)
+```
+
+
+```{r}
+# Re-index based on trading days
+google_stock <- gafa_stock %>%
+  filter(Symbol == "GOOG") %>%
+  mutate(day = row_number()) %>%
+  update_tsibble(index = day, regular = TRUE)
+
+# Filter the year of interest
+google_2015 <- google_stock %>% filter(year(Date) == 2015)
+# Fit the models
+google_fit <- google_2015 %>%
+  model(
+    Mean    = MEAN(Close),
+    `Naïve` = NAIVE(Close),
+    Drift   = NAIVE(Close ~ drift()),
+    SNAIVE  = SNAIVE(Close)
+  )
+```
+
+```{r}
+google_fit
+```
+
+```{r}
+# Produce forecasts for the 19 trading days in January 2015
+google_fc <- google_fit %>% forecast(h = 19)
+
+google_fc
+```
+
+```{r}
+# A better way using a tsibble to determine the forecast horizons
+google_jan_2016 <- google_stock %>%
+  filter(yearmonth(Date) == yearmonth("2016 Jan"))
+google_fc <- google_fit %>% forecast(google_jan_2016)
+# Plot the forecasts
+google_fc %>%
+  autoplot(google_2015, level = NULL) +
+    autolayer(google_jan_2016, Close, color='black') +
+    ggtitle("Google stock (daily ending 31 Dec 2015)") +
+    xlab("Day") + ylab("Closing Price (US$)") +
+    guides(colour=guide_legend(title="Forecast"))
+```
+
+```{r}
+p1 <- google_fc %>%
+  filter(.model == "Drift") %>% 
+  autoplot(google_2015) +
+    autolayer(google_jan_2016, Close, color='black') +
+    ggtitle("Google stock (daily ending 31 Dec 2015)") +
+    xlab("Day") + ylab("Closing Price (US$)") +
+    guides(colour=guide_legend(title="Forecast"))
+
+p2 <- google_fc %>%
+  filter(.model == "Naïve") %>% 
+  autoplot(google_2015) +
+    autolayer(google_jan_2016, Close, color='black') +
+    ggtitle("Google stock (daily ending 31 Dec 2015)") +
+    xlab("Day") + ylab("Closing Price (US$)") +
+    guides(colour=guide_legend(title="Forecast"))
+
+p1 / p2
+```
+
+# Valores ajustados (fitted) y residuales
+
+- Valores reales: Datos históricos de la serie de tiempo.
+- Valores ajustados: Valores (fitted) que tratan de pronosticar los valores reales
+- Residuales: Valores que el modelo no logró capturar. la diferencia entre valores reales y ajustados.
+
+
+augment() obtiene los valores ajustados y residuales de un modelo:
+
+```{r}
+augment(beer_fit)
+```
+
+
+## Diagnóstico de residuales
+
+Es importante analizar los residuales de un modelo. *Si los residuales presentan patrones*, es signo de que el modelo se puede mejorar. 
+
+Los residuales de un buen modelo deben de:
+
+- No estar autocorrelacionadas. Si se detectan correlaciones entre residuos,todavía hay información útil que se debe modelar. 
+- La media de los residuos es cero. Si es distinta a cero, el pronóstico está sesgado.
+
+Opcionales:
+- Los residuos tienen una varianza constante.
+- Los residuos se distribuyen de manera normal.
+
+
+*Transformaciones Box-Cox pueden ayudar a mejorar los residuales*
+
+
+```{r}
+google_2015 %>% autoplot(Close) +
+  xlab("Day") + ylab("Closing Price (US$)") +
+  ggtitle("Google Stock in 2015")
+```
+
+```{r}
+aug <- google_2015 %>% 
+  model(NAIVE(Close)) %>% 
+  augment()
+
+aug
+```
+
+```{r}
+# aug %>% 
+#   features(.resid, mean(.,na.rm = TRUE))
+
+aug %>% pull(.resid) %>% mean(na.rm = TRUE) 
+```
+
+```{r}
+aug %>% autoplot(.resid) + xlab("Día") + ylab("") +
+  ggtitle("Residuales del método naïve")
+```
+Parece que la media es casi cero y la variación es constante, excepto un outlier. 
+
+```{r}
+aug %>%
+  ggplot(aes(x = .resid)) +
+  geom_histogram() +
+  ggtitle("Histograma de los residuales")
+```
+
+```{r}
+aug %>% ACF(.resid)
+```
+
+```{r}
+aug %>% ACF(.resid) %>% autoplot() + ggtitle("ACF of residuals")
+```
+Se puede ver que los residuos no están autocorrelacionados (ACF), por lo tanto este método (NAIVE) es bueno para esta serie de tiempo, y los pronósticos derivados de este método pueden ser muy buenos.
+
+Todo en una sola gráfica:
+```{r}
+google_2015 %>% 
+  model(NAIVE(Close)) %>% 
+  gg_tsresiduals()
+```
+
+```{r}
+aus_production %>% 
+  filter_index("1992" ~ .) %>%
+  model(SNAIVE(Beer)) %>% 
+  gg_tsresiduals()
+```
+
+```{r}
+aus_production %>% 
+  filter_index("1992" ~ .) %>%
+  gg_tsdisplay(Beer)
+```
+
+Veamos con el método de Media:
+
+```{r}
+google_2015 %>% 
+  model(MEAN(Close)) %>% 
+  augment() %>% 
+  pull(.resid) %>% 
+  mean(na.rm = TRUE)
+```
+```{r}
+google_2015 %>% 
+  model(MEAN(Close)) %>% 
+  gg_tsresiduals() + 
+  ggtitle("Diagnóstico de residuales para el modelo de Media")
+```
+Como podemos ver, el método de la media no es óptimo para esta serie de acciones, siendo que la media es 0, al graficar los residuales vemos que muestra un patón (igual al de los datos menos la media), existen claramente autocorrelaciones de una caminata aleatoria y no hay ninguna distribución normal. estos tres factores lo hacen un método nada efectivo para acciones.
+
+
+## Tests de Portmanteau de autocorrelación
+
+Tests para analizar de una forma más formal la presencia o ausencia de autocorrelación en los residuales.
+Nos ayuda a ver si las primeras $h$ autocorrelaciones son significativamente distintas de cero o no.
+
+### Test de Box-Pierce
+
+Sumatoria de $r^2_k$ donde $h$ es el rezago máximo a considerar y $T$ es la cantidad de observaciones en la muestra. Si $r^2_k$ es pequeña, entonces el resultado será pequeño. Se recomienda usar $h = 10$ para datos no estacionales, $h = 2m$ para datos estaionales (m es el periodo estacional) o como máximo $h = T/5$.
+
+Hay que tomar en cuenta, que la prueba no es tan buena cuando $h$ es grande (mayor a $T/5$). 
+
+### Test de Ljung-Box
+
+Generalmente más preciso que Box-Pierce, de igual forma, valores grandes en el resultado indica que no es ruido blanco y los residuales sí están autocorrelacionados. 
+
+
+### Hipótesis nula
+
+La hipótesis nula dice que la serie en cuestión no está autocorrelacionada, o sea, es riudo blanco.
+Para unos residuales, que la hipótesis nula sea cierta es bueno, ya que significa que no están correlacionados los residuales. 
+
+¿Cómo saber si es cierta o no?
+
+Siendo $\alpha$ el nivel de significancia o nivel máximo de error dispuestos a aceptar (usaremos 5%) y p-value un avlor resultante de las pruebas:
+
+Si p-value es menor a $\alpha$, entonces rechazamos la hiótesis nula, de lo contrario, la aceptamos. 
+
+O sea:
+
+- $p-value > \alpha$, H0 es cierta, residuales no están autocorrelacionados.
+- $p-value < \alpha$, H0 es falsa, residuales están autocorrelacionados.
+
+
+Ejemplos: 
+
+```{r}
+# lag=h and fitdf=K
+aug %>% features(.resid, box_pierce, lag=10, dof=0)
+```
+
+```{r}
+aug %>% features(.resid, ljung_box, lag=10, dof=0)
+```
+
+Como podemos ver para el método Naive, el p-value es mayor al 5%, por lo tanto sus residuos no están autocrrelacionados, son ruido blanco.
+
+```{r}
+google_2015 %>% 
+  model(MEAN(Close)) %>% augment() %>% 
+  features(.resid, box_pierce, lag = 10, dof = 0)
+```
+
+```{r}
+google_2015 %>% 
+  model(MEAN(Close)) %>% augment() %>% 
+  features(.resid, ljung_box, lag = 10, dof = 0)
+```
+
+Para el caso de Google, no se logra distinguir los residuales del ruido blanco. 
+
+
+# Intervalos de predicción
+
+$c$ es el porcentaje de cobertura de probabilidad. Normalmente se usará 80% y 95%.
+
+Al tener incertidumbre en el ponóstico, entre maoyr sea el intervalo, menos preciso será nuestro pronóstico.
+
+## Intervalos de predicción de un paso
+
+Cunado ser realizan pronósitocs de un paso, la desviación estándar del pronóstico es prácticamente la misma que la desviación estándar de los residuos.
+
+## Intervalos de predicción de paso múltiple
+
+Entre más aumenta el horizonte de pronóstico, mayor será el intervalo de pronóstico, Esto es, $\simga_h$ incrementa con $h$, entonces necesitamos estimaciones de $\sigma_h$.
+
+## Métodos de referencia
+
+Usando fable:
+
+```{r}
+google_2015 %>%
+  model(NAIVE(Close)) %>%
+  forecast(h = 10) %>%
+  hilo()
+```
+
+```{r}
+google_2015 %>%
+  model(NAIVE(Close)) %>%
+  forecast(h = 10) %>%
+  autoplot(google_2015)
+```
+
+## Intervalos de predicción con residuales bootstrap
+
+Cuando no es razonable asumir normlidad en los residuos, podemos aplicarles bootstraping, ya que solo asume la no autocorrelación. 
+
+Se obteienen muchos escenarios futuros posibles. Para ver algunos, se usa generate:
+
+```{r}
+fit <- google_2015 %>%
+  model(NAIVE(Close))
+
+sim <- fit %>%  generate(h = 30, times = 5, bootstrap = TRUE, seed = 123) # only works with dev version
+
+sim
+```
+
+Generamos 5 escenarios futuros posibles para los siguientes 30 días de trading. 
+
+```{r}
+google_2015 %>%
+  ggplot(aes(x = day)) +
+  geom_line(aes(y = Close), size = 1) +
+  geom_line(aes(y = .sim, colour = as.factor(.rep)), data = sim, size = 1) +
+  ggtitle("Google closing stock price") +
+  guides(col = FALSE)
+```
+
+Con esto, podemos obtener intervalos de predicción, al calcular los percentiles de los escenarios futuros. El resultado es el *ntervalo de predicción bootstrapped*. Esto se puede lograr con forecast:
+
+```{r}
+fc <- fit %>% forecast(h = 30, bootstrap = TRUE)
+fc
+fc %>% autoplot(google_2015) +
+  ggtitle("Google closing stock price")
+
+fc <- fit %>% forecast(h = 30)
+fc
+fc %>% autoplot(google_2015) +
+  ggtitle("Google closing stock price")
+```
+
+# Pronósticos con transformaciones
+
+Si se le hace un pronóstico a una serie anteriormente transformada (Box-cox por ejemplo), al terminar el pronóstico, se tiene que hacer una transformación inversa para ver la versión original del pronóstico. 
+
+Transformación inversa de Box-Cox: 
+
+$y_t=$
+
+${exp(w_t), \text{ si }\lambda = 0}.$
+
+$(\lambda w_t^\lambda+1)^{1/\lambda}, \text{ en otro caso}.$
+
+
+La paquetería fable realiza la transofrmación ivnersa en automático, cuando se especifica en la definición del modelo.
+
+## Ajustes por sesgo 
+
+Un problema al realizar transformaciones matemáticas, como Box--Cox es que las estimaciones puntuales re transformadas ya no presentan la media de la distribución de predicción, sino que la mediana. Esto puede llegar a ser problema dependiendo del contexto, pero normalmente no causa mucha diferencia.
+
+Ajustar por sesgo es la transformación inversa de la media, entre más grande sea la varianza, mayor será la diferencia entre la media y la mediana. 
+
+```{r}
+eggs <- as_tsibble(fma::eggs)
+eggs %>% 
+  model(RW(log(value) ~ drift())) %>% 
+  forecast(h=50) %>% 
+  autoplot(eggs, level = 80,  
+           point_forecast = lst(mean, median))
+```
+
+Por lo tanto, para tener un pronóstico sesgado, se usa point_forecast = lst(median)
+
+# Pronósticos con descomposición
+
+La descomposición de series de tiempo puede ser útil para producir pronósticos. 
