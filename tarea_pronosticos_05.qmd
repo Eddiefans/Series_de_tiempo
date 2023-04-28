@@ -9,8 +9,10 @@ editor: source
 
 
 ```{r}
+#| message: false
 library("easypackages")
 packages("tidyverse","fpp3", "tsibble", "feasts","fable", "patchwork")
+library("USgas")
 ```
 
 
@@ -525,3 +527,265 @@ Por lo tanto, para tener un pronóstico sesgado, se usa point_forecast = lst(med
 # Pronósticos con descomposición
 
 La descomposición de series de tiempo puede ser útil para producir pronósticos. 
+
+El pronóstico se realiza en dos pasos: 
+- Un pronóstico para el componente estacional.
+- Un pronósitco separado para la serie desestacionalizada. 
+
+En realidad, SNAIVE es el pronóstido de solo el componente estacional. 
+
+```{r}
+(us_retail_employment <- fpp3::us_employment %>%
+  filter(year(Month) >= 1990, Title == "Retail Trade"))
+
+us_retail_employment %>% 
+autoplot(Employed)
+```
+
+```{r}
+dcmp <- us_retail_employment %>%
+  model(STL(Employed ~ trend(window = 7), robust=TRUE)) %>%
+  components() %>%
+  select(-.model)
+
+dcmp
+```
+
+```{r}
+dcmp %>%
+  model(NAIVE(season_adjust)) %>%
+  forecast() %>%
+  autoplot(dcmp) + ylab("New orders index") +
+  ggtitle("Pronóstico naïve de los datos desestacionalizados")
+
+```
+
+Le podemos agregar nuevamente la estacionalidad con la función decomposition_model():
+
+```{r}
+us_retail_employment %>%
+  model(stlf = decomposition_model(
+             STL(Employed ~ trend(window = 7), robust = TRUE),
+             NAIVE(season_adjust)
+  )) %>%
+  forecast() %>%
+  autoplot(us_retail_employment)
+```
+
+# Evaluación del desempeño de los pronósticos 
+
+## Conjuntos de entrenamiento y prueba
+
+El tamaño de la prueba es, generalmente, del 20% del total de datos disponibles. 
+
+- Un modelo que se ajusta muy bien a los datos de entrenamiento no necesariamente produce los mejore spronósticos. 
+- Al aumentar los parámetros, podemos llegar a un ajuste perfecto del modelo a los datos. 
+- Puede darse un efecto de sobre ajuste (over-fitting) y esto es tan malo como tener un muy mal ajuste. 
+
+## Funciones para sementar las series de tiempo
+
+top_n nos permite obtener las n observaciones más extremas. 
+```{r}
+gafa_stock %>%
+  group_by(Symbol) %>%
+  top_n(1, Close)
+```
+
+# Errores de pronóstico 
+
+Diferencia entre el valor real ocurrido y el dato pronosticado.
+
+Los errores de pronóstico son distintos de los residuales en:
+
+- Los residuales se calculan con los datos de entrenamiento, mientras que los errores de pronóstico se calculan con los de prueba. 
+- Los residuos se calculan mediante pronósticos de un paso, los errores pueden ser multi-step.
+
+## Errores dependientes de la escala de los datos
+
+Dependen de la escala de la serie de tiempo, por lo que no se puede comparar con series de tiempo con otras unidades. 
+
+Los dos más utilizados son:
+
+- MAE, Mean absolute error, el promedio del error. 
+- RMSE, Root mean squared error, la raíz cuadrada del promedio del error.
+
+MAE es muy utilizado por su facilidad de cómputo e interpretación. 
+
+## Errores porcentuales
+
+Son un porcentaje y son muy utilizados para comparar el desempeño de pronósticos de distintos conjuntos de datos. 
+
+-MAPE, Mean absolute percentage error, el promedio del error. 
+
+El problema es que si un dato es 0, este error será infinito, por lo tanto se inventó:
+
+-sMAPE, symmetric MAPE, resuelve el problema del MAPE.
+
+Sin embargo, no es recomendable en la práctica. 
+
+## Errores escalados 
+
+ALternativa para porcentuales para comparar con otras series.
+
+- MASE, Mean absolute scalated error, promedio de los errores escalados. 
+
+
+```{r}
+recent_production <- aus_production %>% filter(year(Quarter) >= 1992)
+beer_train <- recent_production %>% filter(year(Quarter) <= 2007)
+
+beer_fit <- beer_train %>%
+  model(
+    Mean = MEAN(Beer),
+    `Naïve` = NAIVE(Beer),
+    `Seasonal naïve` = SNAIVE(Beer),
+    Drift = RW(Beer ~ drift())
+  )
+
+beer_fc <- beer_fit %>%
+  forecast(h = 10)
+
+beer_fc %>%
+  autoplot(recent_production, level = NULL) +
+  xlab("Year") + ylab("Megalitres") +
+  ggtitle("Forecasts for quarterly beer production") +
+  guides(colour=guide_legend(title="Forecast"))
+```
+
+Usamos accuracy para ver los errores en el ajuste de modelos (mabble) a los datos de entrenamiento:
+
+```{r}
+accuracy(beer_fit)
+```
+
+
+Ahora la usamos para ver los errores de pronóstico (fabble) comparado a los datos de prueba:
+
+```{r}
+beer_fc |>  accuracy(recent_production)
+```
+
+Los errores de ajuste (datos de entrenamiento) sirven para ver que modelos utilizar para pronosticar.
+
+Los errores de pronóstico (datos de prueba) nos da mayor claridad de cuáles modelos parecen producir los mejores pronósticos. 
+
+Después de esto se recalculan los modelos utilizando toda la información (sin separar en conjuntos de entrenamiento y prueba) y *se producen los pronósticos reales a presentar.*
+
+
+# Tarea
+
+Series:
+
+## 1. Serie de ventas de ropa en el Estado de Victoria, Australia
+```{r}
+(clothes_victoria <- filter(aus_retail, State == "Victoria", Industry == "Clothing retailing") |> select(Month, Turnover))
+
+
+train <- filter_index(clothes_victoria, "2000 Jan" ~ "2015 Dec")
+autoplot(clothes_victoria, Turnover)
+
+fit <- model(train, 
+             Mean = MEAN(Turnover), 
+             Naive = NAIVE(Turnover), 
+             Snaive = SNAIVE(Turnover), 
+             Drift = RW(Turnover ~ drift()))
+
+fc <- forecast(fit, h = "3 years")
+
+fc |> autoplot(filter_index(clothes_victoria, "2000 Jan" ~ .), level = NULL) +
+  ggtitle("Pronóstico de ventas mensuales de ropa en Victoria") +
+  xlab("Mes") + ylab("MegaWhats/hora") + 
+  guides(color=guide_legend(title="Tipo")) +
+  geom_vline(xintercept = as.Date("2016-01-01"), color = "firebrick", linetype = "dashed")
+```
+
+```{r}
+select(fit, Mean) |> gg_tsresiduals() + ggtitle("Media") 
+```
+La media no es buena idea, no muestra distribución normal del todo, están autocorrelacionados y la gráfica muestra un patrón.
+
+```{r}
+select(fit, Naive) |> gg_tsresiduals() + ggtitle("Naive") 
+```
+Naive parece ser la mejor opción, tiene distribución normal, su varianza es algo constante y no parece estar muy correlacionado.
+
+
+```{r}
+select(fit, Snaive) |> gg_tsresiduals() + ggtitle("Snaive") 
+```
+Snaive muestra distribución normal, sin embargo, parece presentar cierta correlación y patrón.
+A pesar de esto, Snaive sigue siendo un buen modelo al ver el gráfico.
+
+
+```{r}
+select(fit, Drift) |> gg_tsresiduals() + ggtitle("Drift") 
+```
+
+Drift tiene residuales muy similares a Naive, pueden ser buenas bases para aplicar otros modelos, sin embargo, tomando solo en cuenta los benchmark, probablemente Snaive será el que se va a utilizar.
+
+```{r}
+fc <- filter(fc, .model == "Snaive")
+fc_bs <- forecast(fit, h ="3 years", bootstrap = TRUE)
+fc_bs <- filter(fc_bs, .model == "Snaive")
+
+fc |> autoplot(filter_index(clothes_victoria, "2000 Jan" ~ .)) +
+  ggtitle("Pronóstico de ventas mensuales de ropa en Victoria") +
+  xlab("Mes") + ylab("MegaWhats/hora") + 
+  guides(color=guide_legend(title="Tipo")) +
+  geom_vline(xintercept = as.Date("2016-01-01"), color = "firebrick", linetype = "dashed")
+
+fc_bs |> autoplot(filter_index(clothes_victoria, "2000 Jan" ~ .)) +
+  ggtitle("Pronóstico de ventas mensuales de ropa en Victoria") +
+  xlab("Mes") + ylab("MegaWhats/hora") + 
+  guides(color=guide_legend(title="Tipo")) +
+  geom_vline(xintercept = as.Date("2016-01-01"), color = "firebrick", linetype = "dashed")
+```
+Al no ser datos muy aleatorios o los datos de una acción, y que los horizontes de pronóstico no son muy diferentes, no es necesario usar Bootstrap.
+
+
+
+
+## 2. Serie de PIB per capita de Australia
+```{r}
+timetk::aus_economy
+(aus_gdp <- mutate(aus_economy, GDP_pc = GDP / Population) |> select(Year, GDP_pc))
+
+train <- filter_index(aus_gdp, "1970" ~ "2010")
+autoplot(aus_gdp, GDP_pc)
+
+fit <- model(train, 
+             Mean = MEAN(GDP_pc), 
+             Naive = NAIVE(GDP_pc), 
+             Snaive = SNAIVE(GDP_pc), 
+             Drift = RW(GDP_pc ~ drift()))
+
+fc <- forecast(fit, h = "7 years")
+
+fc |> autoplot(filter_index(aus_gdp, "1970" ~ .), level = NULL) +
+  ggtitle("Pronóstico de PIB per Capita de Australia") +
+  xlab("Año") + ylab("USD") + 
+  guides(color=guide_legend(title="Tipo")) +
+  geom_vline(xintercept = 2011, color = "firebrick", linetype = "dashed")
+```
+Como podemos ver, Snaive no funciona al no ser estacional (se usan datos anuales)
+```{r}
+select(fit, Mean) |> gg_tsresiduals() + ggtitle("Media") 
+```
+La media no es buena idea, no muestra distribución normal, están autocorrelacionados y la gráfica muestra un patrón muy similar a los datos.
+
+```{r}
+select(fit, Naive) |> gg_tsresiduals() + ggtitle("Naive") 
+```
+Naive parece ser la mejor opción, tiene distribución normal, y a pesar de no tener una varianza muy constante, es la mejor, y no parece estar muy correlacionado.
+
+
+```{r}
+select(fit, Drift) |> gg_tsresiduals() + ggtitle("Drift") 
+```
+
+Drift tiene residuales muy similares a Naive, y tomando en cuenta las gráficas, se decide usar Drift para capturar la tendencia alcista que tiene. 
+
+
+Al no ser datos muy aleatorios o los datos de una acción, y que los horizontes de pronóstico no son muy diferentes, no es necesario usar Bootstrap.
+
+
