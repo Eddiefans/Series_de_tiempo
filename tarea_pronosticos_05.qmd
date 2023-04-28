@@ -747,8 +747,9 @@ Al no ser datos muy aleatorios o los datos de una acción, y que los horizontes 
 
 ## 2. Serie de PIB per capita de Australia
 ```{r}
-timetk::aus_economy
-(aus_gdp <- mutate(aus_economy, GDP_pc = GDP / Population) |> select(Year, GDP_pc))
+
+(aus_gdp <- filter(global_economy, Code == "AUS") %>% 
+   mutate(GDP_pc = GDP / Population) |> select(Year, GDP_pc))
 
 train <- filter_index(aus_gdp, "1970" ~ "2010")
 autoplot(aus_gdp, GDP_pc)

@@ -1,0 +1,5 @@
+R for Data Science (R4DS):
+https://r4ds.had.co.nz/data-visualisation.html
+
+Forecasting Principles and Practice:
+https://otexts.com/fpp3/graphics.html
