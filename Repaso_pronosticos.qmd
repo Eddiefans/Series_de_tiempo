@@ -1,0 +1,18 @@
+---
+title: "Repaso Pronósticos"
+author: "Eddie Aguilar"
+format:
+  html:
+    self-contained: true
+editor: source
+---
+
+```{r}
+# install.packages("devtools")
+devtools::install_github("pbenavidesh/maf3074")
+```
+
+```{r}
+learnr::run_tutorial("forecasting", package = "maf3074")
+```
+
