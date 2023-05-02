@@ -1,0 +1,332 @@
+---
+title: "Proyecto_Eddie"
+author: "Eddie Aguilar"
+format: 
+  html:
+    self-contained: true
+    toc: true
+    df-print: paged
+---
+
+Proyecto Parcial 2
+
+## Serie de tiempo
+
+Estaré usando la serie de tiempo correspondiente a las exportaciones mensuales de Canadá, de enero de 1960 hasta enero de 2022, sin embargo, utilizare únicamente los datos correspondientes a este siglo con un término en enero de 2022, esto para no saturar el número de datos usados en la serie.
+
+Me parece interesante ver el comportamiento que ha tenido las exportaciones de un país bien desarrollado como lo es Canadá, ver como eventos en el comercio internacional han afectado dichos valores y poder predecir un futuro.
+
+Cargar librerías:
+
+```{r}
+#| message: false
+library("tidyverse")
+library("fpp3") 
+library("patchwork")
+library("plotly")
+```
+
+## Importación
+
+FRED:
+
+```{r}
+exports <- tidyquant::tq_get(x = "XTEXVA01CAM667S", get = "economic.data", from = "2000-01-01")
+exports
+```
+
+Tsibble:
+
+```{r}
+exports_t <- exports |> 
+  as_tsibble( index = date, key = symbol ) |> 
+  rename( dollars_monthly = price) %>% 
+  mutate(date = yearmonth(date))
+exports_t
+```
+
+Visualización:
+
+```{r}
+exports_t %>% autoplot(dollars_monthly) + ggtitle("Exportaciones de Canadá") + ylab("Dólares (USD) mensuales") + xlab("Mes")
+```
+
+## Limpieza de datos
+
+Datos vacíos:
+
+```{r}
+exports_t <-  exports_t |> na.omit(exports_t)
+exports_t
+```
+
+## Inspección visual
+
+No se usará ninguna gráfica diferente a la anteriormente vista, esto debido a la carencia de categorías, solo se le añadará relleno:
+
+```{r}
+exports_t |> 
+  autoplot(dollars_monthly) + geom_area(color="black", fill = "light green") + ggtitle("Inspección") + ylab("Dólares (USD) mensuales") + xlab("Mes")
+```
+
+## Detección de outliers y observaciones
+
+Hay cuatro claros dentro de la gráfica, el primero siendo en los dos últimos cuartos de 2008, a pesar de poder ser calificado como un outlier, en realidad no es tan drástico a comparación de los otros tres, esto debido a que el evento no tuvo un impacto directo, sino que era el efecto indirecto del retraso que Canadá presentó ante la Gran Recesión en 2008 comparado con el año que Estados Unidos ya había experimentado. Una de las razones para que Canadá mantuviera su economía fuera de recesión fue un sector bancario más fuerte que Estados Unidos.
+
+Sin embargo, eventualmente Canadá también entró oficialmente a la recesión en el primer cuarto de 2009, donde tenemos un claro outlier debido a este suceso que terminó en Canadá al cabo de un semestre.
+
+Con la llegada de la pandemia debido a COVID-19, Canadá, al igual que la mayoría de países en el mundo, sufrió un gran impacto en su economía entrando el primer cuarto de 2020, ahí podemos ver un outlier. En febrero de 2019 se pudo ver un rápido decrecimiento en las exportaciones hacia China y Corea del Sur. Un mes después las exportaciones generales del país bajaron un 7.9%.
+
+Por último, en el segundo cuarto de 2021 ocurrió otro pico positivo en las exportaciones debido a un mayor número y mejor precio en materia prima junto con una recuperación más evidente de los efectos de la pandemia en la economía.
+
+## Ajuste y transformación matemática
+
+Se usará una transformación logarítmica para tener una varianza más estable:
+
+```{r}
+exports_t %>% autoplot(dollars_monthly) + ggtitle("Exportaciones de Canadá") + ylab("Dólares (USD) mensuales") + xlab("Mes")
+
+
+exports_t %>% autoplot(log(dollars_monthly)) + ggtitle("Exportaciones de Canadá") + ylab("Dólares (USD) mensuales") + xlab("Mes")
+```
+
+## Descomposición
+
+```{r}
+exports_d <- exports_t %>%
+  model(STL(log(dollars_monthly),robust = TRUE)) %>%
+  components() 
+autoplot(exports_d) 
+```
+
+Podemos observar que hay una ligera tendencia a la alza (debido a las propias exportaciones y su comportamiento), al mismo tiempo que presenta una estacionalidad muy ligera tomando en cuenta la escala de la misma.
+
+## Flujo de pronóstico
+
+## Entrenamiento
+
+Al no presentar grandes cambios más que un aumento en las exportaciones antes del 2000, se trabajará a partir de esta fecha y terminando en 2022 para mostrar lso comportamientos que ha tenido en los útlimos años.
+
+```{r}
+#| warning: false
+exports_train <- exports_t %>% filter_index('2000' ~ '2022-01-01')
+```
+
+Benchmark:
+
+Vemos que probablmente el modelo de media no sea buena idea debido al último outlier, lo que hará que sea muy baja. De la misma forma, Naive va a largar el último dato y probalemente sea muy alto.
+
+```{r}
+#| warning: false
+exports_fit <- exports_train|> model( snaive = SNAIVE(log(dollars_monthly)),
+                              drift = RW(log(dollars_monthly) ~ drift() ))
+
+exports_fit |> forecast(h=24) |> autoplot(exports_t |> filter_index("2017"~.)) + ggtitle("Pronósticos con Benchmark ")  + xlab("Mes") + ylab("Dólares (USD) mensuales")
+```
+
+Parece ser que drift es la mejor opción, y Snaive no tanto debido al outlier.
+
+```{r}
+accuracy(exports_fit) %>% 
+  select(.model, .type, MAE, RMSE, MAPE, MASE) %>% 
+  arrange(MAPE)
+```
+
+Comprobamos que Sanive no tuvo una muy buena aproximación. Definitivamente los modelos descartados con antelación hubieran presentado un error muy grande.
+
+Residuales:
+
+```{r}
+#| warning: false
+exports_fit |> select(snaive) |> gg_tsresiduals() + ggtitle('Residuales del modelo snaive')
+exports_fit |> select(drift) |> gg_tsresiduals() + ggtitle('Residuales del modelo drift')
+```
+
+Como podemos ver Snaive es una muy mala opción debido a todos los residuales fuera de lugar que tiene, del otro lado, drift parece ser muy buena opción a pesar de mostrar una pequeña auto correlación.
+
+Modelo ETS:
+
+```{r}
+exports_fit2 <- exports_train |> 
+      model(
+        ETS = decomposition_model(
+                          STL(log(dollars_monthly), robust = TRUE),
+                          ETS(season_adjust ~ error("A") + trend("Ad") + season("N"))),
+        autoETS = ETS(log(dollars_monthly))
+        )
+
+accuracy(exports_fit2) |> 
+  select(.model, .type, MAE, RMSE, MAPE, MASE) |>
+  arrange(MAPE)
+```
+
+Prueba de ljung_box para ver autocorrelación:
+
+```{r}
+exports_fit2 %>% augment() %>% features(.innov, ljung_box, lag = 24, dof=0)
+```
+
+El modelo ETS automático se ajusta bien, pero sus residuales están correlacionados. A diferencia del modelo de descomposición que no están, esto en parte a que no se usa SNAIVE.
+
+```{r}
+#| warning: false
+exports_fit2 |> select(ETS) |> gg_tsresiduals() + ggtitle('Residuales del modelo de descomposición')
+exports_fit2 |> select(autoETS) |> gg_tsresiduals() + ggtitle('Residuales del modelo automático')
+```
+
+## ARIMA
+
+Pruebas de raíz unitaria:
+
+```{r}
+exports_t |> features(dollars_monthly, unitroot_ndiffs)
+exports_t |> mutate(dollars_monthly = difference(dollars_monthly, lag = 12)) |> features(dollars_monthly, unitroot_ndiffs)
+```
+
+Podemos ver que una diferenciación estacional es suficiente.
+
+Autocorrelación y autocorrelación parcial para modelos SARIMA:
+
+```{r}
+exports_diff <- exports_train |> mutate(exports_diff1 = difference(dollars_monthly),
+                                          exports_diff2 = difference(dollars_monthly, lag =12) |> difference(lag =1))
+
+exports_diff |> gg_tsdisplay(exports_diff1, plot_type = "partial") + ggtitle("Primeras Diferencias")
+
+exports_diff |> gg_tsdisplay(exports_diff2, plot_type = "partial") + ggtitle("Estacionales")
+```
+
+Resultados sugeridos: p = 1, q = 1, P = 2, Q = 1
+
+Igualmente haremos un ARIMA autómatico y nuestro propio ARIMA pero no con todos los valores, esto para visualizar los reportes y ver de nuevo los valores sugeridos:
+
+```{r}
+exports_fit3 <- exports_train |>
+  model(
+    autoARIMA = ARIMA(dollars_monthly  ~ pdq() + PDQ(0, 0, 0)),
+    SARIMA = ARIMA(dollars_monthly  ~ pdq(0,1,1) + PDQ(D=1)))
+
+accuracy(exports_fit3) |> 
+  select(.model, .type, MAE, RMSE, MAPE, MASE) |>
+  arrange(MAPE)
+```
+
+El autómatico fue mejor que el SARIMA, tal vez podrá mejorar con otros valores de pdq y PDQ.
+
+Veamos los reportes:
+
+```{r}
+report(exports_fit3 |> select(autoARIMA))
+report(exports_fit3 |> select(SARIMA))
+```
+
+Usamos los valores sugeridos y vistos en los reportes, más adelante se experimentará más con estos valores al momento de hacer modelos combinados:
+
+```{r}
+exports_fit3 <- exports_train |>
+  model(
+    autoARIMA = ARIMA(dollars_monthly  ~ pdq(0,1,1) + PDQ(0, 1, 1)),
+    SARIMA = ARIMA(dollars_monthly  ~ pdq(0,1,1) + PDQ(2,1,0)))
+
+accuracy(exports_fit3) |> 
+  select(.model, .type, MAE, RMSE, MAPE, MASE) |>
+  arrange(MAPE)
+```
+
+## Mabble
+
+```{r}
+exports_mabble <- exports_train |>
+  model(
+    drift = RW(log(dollars_monthly) ~ drift()),
+    ETS = decomposition_model(
+                          STL(log(dollars_monthly), robust = TRUE),
+                          ETS(season_adjust ~ error("A") + trend("Ad") + season("N"))),
+    SARIMA = ARIMA(dollars_monthly  ~ pdq(0,1,1) + PDQ(2,1,0)))
+  
+accuracy(exports_mabble) |> 
+  select(.model, .type, MAE, RMSE, MAPE, MASE) |>
+  arrange(MAPE)
+```
+
+## Modelos combinados
+
+Encontrar posibles mejores modelos a los actuales:
+
+```{r}
+exports_comb <- exports_train %>% 
+  model(
+    drift_ETS = decomposition_model(
+                          STL(log(dollars_monthly), robust = TRUE),
+                          RW(log(season_adjust) ~ drift()),
+                          ETS(season_year ~ error("A") + trend("Ad") + season("N"))),
+    drift_SARIMA = decomposition_model(
+                          STL(log(dollars_monthly), robust = TRUE),
+                          RW(log(season_adjust) ~ drift()),
+                          ARIMA(season_year  ~ pdq(0,1,1) + PDQ(2,1,1))),
+    ETS_SARIMA = decomposition_model(
+                          STL(log(dollars_monthly), robust = TRUE),
+                          ETS(season_year ~ error("A") + trend("Ad") + season("N")),
+                          ARIMA(season_adjust  ~ pdq(0,1,1) + PDQ(2,1,1))),
+  )
+
+exports_comb |> accuracy() |>
+  select(.model, .type, MAE, RMSE, MAPE, MASE) |>
+  arrange(MAPE)
+```
+
+## Pronóstico de combinados
+
+```{r}
+#| warning: false
+exports_fore <- exports_comb %>% forecast(h=12)
+exports_fore %>% autoplot(exports_t %>% filter_index("2017" ~ .)) + xlab("Mes") + ylab("Dólares (USD) mensuales") + ggtitle("Pronósticos de combinados")
+```
+
+Ahora tomando en cuenta todos los datos, veremos si algún modelo se convierte mejor que otro:
+
+```{r}
+#| warning: false
+exports_fore |>  
+  accuracy(exports_t) |> 
+  select(.model, .type, MASE, RMSE, MAPE, MAE ) |> 
+  arrange(MAPE)
+```
+
+Usamos la mejor opción:
+
+## Predección
+
+```{r}
+#| warning: false
+exports_f <- exports_t |>
+      model( ETS_SARIMA = decomposition_model(
+                          STL(log(dollars_monthly), robust = TRUE),
+                          ETS(season_year ~ error("A") + trend("Ad") + season("N")),
+                          ARIMA(season_adjust  ~ pdq(0,1,1) + PDQ(2,1,1))))
+
+exports_fore <- exports_f |> forecast(h = 12)
+exports_fore |> autoplot(exports_t |> filter_index('2017' ~ .)) + ggtitle("Predicción") + xlab("Mes") + ylab("Dólares (USD) mensuales")
+```
+
+## Conclusión
+
+Como conclusión, podemos observar de forma gráfica que el modelo ETS_SARIMA presenta una predicción aparentemente lógica, además de ser el modelo que menor error MAPE tiene, entre todas, al momento de usar todos los datos disponibles; usé este error ya que presenta un porcentaje independiente a la escala de los datos a diferencia de otros errores. También cabe agregar que sus residuales no presentan correlación.
+
+Tal vez sea factible usar solo una parte de los datos debido al poco cambio en los datos anteriores y actualización en la economía de Canadá en las últimas decadas. De igual forma este modelo se mantiene efectivo en ambos casos.
+
+Al tener un MAPE tan bajo, incluso cuando se hace uso de todos los datos, tenemos una predicción con un error del 3% tentativamente, lo cual lo hace una muy buena predicción.
+
+
+
+
+
+## Referencias
+
+-   Canada, G. A. (2022a, junio 21). Highlights of Canada's Merchandise Trade Performance in 2021. GAC. 
+https://www.international.gc.ca/trade-commerce/economist-economiste/analysis-analyse/merchandise_trade-commerce_marchandises-2021.aspx?lang=eng
+
+-   Canada, G. A. (2022b, diciembre 22). State of trade 2020. GAC.
+https://www.international.gc.ca/gac-amc/publications/economist-economiste/state-of-trade-commerce-international-2020.aspx?lang=eng
+
+-   Recession of 2008--09 in Canada. (s. f.). The Canadian Encyclopedia. https://www.thecanadianencyclopedia.ca/en/article/recession-of-200809-in-canada
