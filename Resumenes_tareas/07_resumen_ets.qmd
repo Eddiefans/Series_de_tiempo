@@ -1,0 +1,57 @@
+---
+title: "07 Resumen ETS"
+author: "Eddie Aguilar"
+format:
+  html:
+    self-contained: true
+editor: source
+---
+
+```{r}
+#| message: false
+library(easypackages)
+libraries("tidyverse","fpp3", "patchwork","plotly")
+```
+
+Los métodos de suavización exponencial son promedios ponderados de los datos anteriores, donde sus pesos caen exponencialmente. 
+
+# Suavización exponencial simple
+
+- SES, Simple exponential smoothing.
+- Es el más simple.
+- Sirve para series sin estacionalidad ni tendencia clara.
+
+```{r}
+algeria_economy <- global_economy %>%
+  filter(Country == "Algeria")
+algeria_economy %>%
+  autoplot(Exports) +
+  ylab("Exports (% of GDP)") + xlab("Year")
+```
+
+Para entender las medias ponderadas, veamos los siguientes métodos:
+
+- Snaive agarra el último valor y lo despliega en el horizonte.
+- Media saca un promedio de todos los valores y lo despliega en el horizonte. 
+
+Entonces tenemos que:
+
+- Snaive es una media ponderada, donde la última observación tiene un peso de 100% (1).
+- Media es una media ponderada, donde todos los valores tienen el mismo peso (simplemente media)
+
+Por lo tanto, un punto intermedio es la suavización exponencial simple. 
+
+$ ETS = \alpha y_T + \alpha(1-\alpha)y_{T-1} + \alpha(1-\alpha)^2y_{T-2} + ...$
+
+Donde $\alpha$ es el parámetro de suavizazión (de 0 a 1), entre más bajo sea el valor, más memoria tendrá y vice versa, esto debido a que decae de forma exponencial el peso de y en cada momento T. Si tenemos un valor muy grande de $\alpha$ decaerá más rápido. 
+
+![](Imagenes/alpha_valor_tabla.png){width=60% height=60%}
+
+Los pronósticos de suavización exponencial simple toma el mismo valor para todo el horizonte. 
+
+Para encontrar el valor de $\alpha$ usamos opt_crit(), puede ser a través del log-likelihood (lik), error medio cuadrático (mse) o el error medio absoluto (mae). El error se puede calcular de forma aditiva ("A") o de forma multiplicativa ("M").
+
+```{r}
+ 
+```
+
