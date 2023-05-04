@@ -52,6 +52,515 @@ Los pronósticos de suavización exponencial simple toma el mismo valor para tod
 Para encontrar el valor de $\alpha$ usamos opt_crit(), puede ser a través del log-likelihood (lik), error medio cuadrático (mse) o el error medio absoluto (mae). El error se puede calcular de forma aditiva ("A") o de forma multiplicativa ("M").
 
 ```{r}
- 
+# Estimar los parámetros
+fit <- algeria_economy %>%
+  model(SES   = ETS(Exports ~ error("A") + trend("N") + season("N"), opt_crit = "mse"),
+        NAIVE = NAIVE(Exports))
+
+fc <- fit %>%
+  forecast(h = 5)
+
+fc %>%
+  autoplot(algeria_economy %>% filter_index("2000"~.), level = NULL) +
+  # geom_line(aes(y = .fitted, colour = "Fitted"), data = augment(fit)) +
+  ylab("Exports (% of GDP)") + xlab("Year")
 ```
+
+```{r}
+fit %>% 
+  select(SES) %>% 
+  report()
+```
+
+# Métodos con tendencia
+
+## El modelo de tendencia lineal de Holt
+
+Ya se permite el pronóstico de tendencia. Además de $\alpha$ (término de suavización), tenemos ahora $\beta$ que es el parámetro de suavización de la tendencia. Solo tenemos que agregar el término trend("A") al modelo (tendencia aditiva).
+
+```{r}
+aus_economy <- global_economy %>%
+  filter(Code == "AUS") %>%
+  mutate(Pop = Population / 1e6)
+
+aus_economy %>% 
+  autoplot(Pop)
+```
+
+```{r}
+
+fit <- aus_economy %>%
+  model(AAN   = ETS(Pop ~ error("A") + trend("A") + season("N")),
+        Drift = RW(Pop ~ drift()))
+
+fc <- fit %>% forecast(h = 10)
+
+fc %>% 
+  autoplot(aus_economy %>% filter_index("2000"~.), level = NULL)
+```
+
+```{r}
+
+fit %>% 
+  glance()
+```
+
+```{r}
+fit %>% 
+  select(AAN) %>% 
+  report()
+```
+
+## Métodos de tendencia amortiguada (damped trend)
+
+El método Holt (trend("Ad")) asume que la tendencia será constante (Creciente o decreciente). Por lo tanto, podemos generar modelos agregando un parámetro de amortiguamiento $\phi$.
+
+El valor de $\pih$ suele ser mayor a 0.8 la mayoría dle timepo, ya que el amortiguemiento puede ser muy fuerte para valores más bajos. Comparando los deos métodos:
+
+```{r}
+aus_economy %>%
+  model(
+    `Holt` = ETS(Pop ~ error("A") + trend("A")),
+    `Damped Holt` = ETS(Pop ~ error("A") + trend("Ad"))
+  ) %>%
+  forecast(h = "15 years") %>%
+  autoplot(aus_economy, level = NULL) +
+  ggtitle("Forecasts from Holt's method") + xlab("Year") +
+  ylab("Population of Australia (millions)") +
+  guides(colour = guide_legend(title = "Forecast"))
+```
+
+```{r}
+aus_economy %>%
+  model(
+    `Damped Holt` = ETS(Pop ~ error("A") + trend("Ad"))
+  ) %>% 
+  report()
+```
+
+Con $\pih$ siendo 0.8:
+
+```{r}
+aus_economy %>%
+  model(
+    `Holt` = ETS(Pop ~ error("A") + trend("A")),
+    `Damped Holt` = ETS(Pop ~ error("A") + trend("Ad", phi = 0.8))
+  ) %>%
+  forecast(h = "15 years") %>%
+  autoplot(aus_economy, level = NULL) +
+  ggtitle("Forecasts from Holt's method") + xlab("Year") +
+  ylab("Population of Australia (millions)") +
+  guides(colour = guide_legend(title = "Forecast"))
+```
+
+```{r}
+pop_fit <- aus_economy %>%
+  model(
+    `Damped Holt mse` = ETS(Pop ~ error("A") + trend("Ad"), opt_crit = "mse"),
+    `Damped Holt lik` = ETS(Pop ~ error("A") + trend("Ad"), opt_crit = "lik")
+  )
+
+pop_fit %>% 
+  select(`Damped Holt mse`) %>% 
+  report()
+```
+
+```{r}
+pop_fit %>% 
+  select(`Damped Holt lik`) %>% 
+  report()
+```
+
+```{r}
+pop_fit %>% tidy()
+```
+
+```{r}
+pop_fit %>% 
+  forecast(h = 15) %>% 
+  autoplot(aus_economy %>% filter_index("2005"~.), level = NULL) +
+  ggtitle("Forecasts from Holt's method") + xlab("Year") +
+  ylab("Population of Australia (millions)") +
+  guides(colour = guide_legend(title = "Forecast"))
+```
+
+Otro ejemplo:
+
+```{r}
+www_usage <- as_tsibble(WWWusage)
+www_usage %>% autoplot(value) +
+  xlab("Minute") + ylab("Number of users")
+```
+
+```{r}
+www_usage %>%
+  stretch_tsibble(.init = 10) %>%
+  model(
+    SES = ETS(value ~ error("A") + trend("N") + season("N")),
+    Holt = ETS(value ~ error("A") + trend("A") + season("N")),
+    Damped = ETS(value ~ error("A") + trend("Ad") + season("N"))
+  ) %>%
+  forecast(h = 1) %>%
+  accuracy(www_usage)
+```
+
+```{r}
+fit <- www_usage %>%
+  model(Damped = ETS(value ~ error("A") + trend("Ad") + season("N")))
+# Los parámetros estimados:
+tidy(fit)
+```
+```{r}
+fit %>%
+  forecast(h = 10) %>%
+  autoplot(www_usage) +
+  xlab("Minute") + ylab("Number of users")
+```
+
+# Métodos con estacionalidad
+
+## Modelo de Holt-Winters
+
+Se agrega el parámetro estacional $\gamma$. Hay dos variantes de este método: aditivo y multiplicativo. 
+
+Aditivo se usa para estacinoalidad constante en el tiempo (season("A")), y multiplitcativo para cuando varia (season("M")).
+
+```{r}
+aus_holidays <- tourism %>%
+  filter(Purpose == "Holiday") %>%
+  summarise(Trips = sum(Trips))
+
+aus_holidays %>% 
+  autoplot()
+```
+
+```{r}
+fit <- aus_holidays %>%
+  model(
+    additive = ETS(Trips ~ error("A") + trend("A") + season("A")),
+    multiplicative = ETS(Trips ~ error("M") + trend("A") + season("M"))
+  )
+
+fit %>% tidy()
+```
+
+```{r}
+
+fc <- fit %>% forecast(h = "3 years")
+
+fc %>%
+  autoplot(aus_holidays, level = NULL) + xlab("Year") +
+  ylab("Overnight trips (millions)") +
+  scale_color_brewer(type = "qual", palette = "Dark2")
+```
+
+## Modelo de Holt-Winters amortiguado
+
+Se puede amortiguar cualquiera de las dos variantes del modelo Holt-Winters.
+
+Un método que suele ser robusto es el método Holt-Winters con tendencia amortiguada y estacionalidad multiplicativa:
+
+```{r}
+ETS(y ~ error("M") + trend("Ad") + season("M"))
+```
+Probando con los datos del tráfico de peatones con estacionalidad semanal y datos diarios:
+
+```{r}
+(sth_cross_ped <- pedestrian %>%
+  filter(Sensor == "Southern Cross Station", yearmonth(Date) == yearmonth("2016 July")) %>%
+  index_by(Date) %>%
+  summarise(Count = sum(Count)))
+
+sth_cross_ped %>%
+  model(hw = ETS(Count ~ error("M") + trend("Ad") + season("M"))) %>%
+  forecast(h = "2 weeks") %>%
+  autoplot(sth_cross_ped)
+```
+
+## Selección automática del modelo ETS
+
+```{r}
+ets_automatico <- sth_cross_ped %>%
+  model(hw = ETS(Count)) 
+ets_automatico %>% 
+  report()
+```
+
+```{r}
+ets_automatico %>%
+  forecast(h = "2 weeks") %>%
+  autoplot(sth_cross_ped)
+```
+Comparando:
+
+```{r}
+sth_cross_ped %>%
+  model(`ETS automático` = ETS(Count),
+        `HW`             = ETS(Count ~ error("M") + trend("Ad") + season("M"))
+        ) %>% 
+  forecast(h = "2 weeks") %>% 
+  autoplot(sth_cross_ped, level = NULL)
+```
+
+```{r}
+sth_cross_ped %>%
+  model(`ETS automático` = ETS(Count),
+        `HW`             = ETS(Count ~ error("M") + trend("Ad") + season("M"))
+        ) %>%
+  accuracy()
+```
+
+# Variedad de métodos de suavización exponencial 
+
+Resumen de los métodos de suavización exponencial:
+
+![](Imagenes/metodos_ets.png){width=60% height=60%}
+
+Combinaciones:
+
+![](Imagenes/combinaciones_ets.png){width=60% height=60%}
+
+# Comparación con métodos benchmark
+
+```{r}
+recent_production <- aus_production %>% filter(year(Quarter) >= 1992)
+beer_train <- recent_production %>% filter(year(Quarter) <= 2007)
+
+beer_fit <- beer_train %>%
+  model(
+    Mean = MEAN(Beer),
+    `Naïve` = NAIVE(Beer),
+    `Seasonal naïve` = SNAIVE(Beer),
+    Drift = RW(Beer ~ drift())
+  )
+
+beer_fc <- beer_fit %>%
+  forecast(h = 10)
+
+beer_fc %>%
+  autoplot(filter(aus_production, year(Quarter) >= 1992), level = NULL) +
+  xlab("Year") + ylab("Megalitres") +
+  ggtitle("Forecasts for quarterly beer production") +
+  guides(colour=guide_legend(title="Forecast"))
+```
+
+```{r}
+accuracy(beer_fc, recent_production)
+```
+
+Comparando con Snaive:
+
+```{r}
+# Entrenamiento de los modelos
+beer_fit <- beer_train %>%
+  model(
+    `Seasonal naïve` = SNAIVE(Beer),
+    `Damped Holt Winters` = ETS(Beer ~ error("M") + trend("Ad") + 
+                           season("M")),
+    `ETS sin tendencia y aditivo` = ETS(Beer ~ error("A") + trend("N") + season("A"))
+  )
+
+# Pronóstico
+beer_fc <- beer_fit %>%
+  forecast(h = 10)
+
+gg_beer <- beer_fc %>%
+  autoplot(filter(aus_production, year(Quarter) >= 1992), level = NULL) +
+  xlab("Year") + ylab("Megalitres") +
+  ggtitle("Forecasts for quarterly beer production") +
+  guides(colour=guide_legend(title="Forecast"))
+
+gg_beer_zoom <-  gg_beer + tidyquant::coord_x_date(xlim = c("2007-10-01","2010-04-01")) + ggtitle("") + 
+  theme(legend.position = "none")
+
+(gg_beer) / (gg_beer_zoom)
+```
+
+```{r}
+# Los errores de pronóstico
+accuracy(beer_fc, recent_production)
+```
+
+El mejor fue Holt-Winters
+
+```{r}
+beer_fc %>%
+  filter(.model == "Damped Holt Winters") %>% 
+  autoplot(filter(aus_production, year(Quarter) >= 1992)) +
+  xlab("Year") + ylab("Megalitres") +
+  ggtitle("Forecast for quarterly beer production using the Damped Holt Winters method") +
+  guides(colour=guide_legend(title="Forecast"))
+```
+
+Otro ejemplo (empleo en el sector minorista de USA):
+
+```{r}
+us_retail_employment <- us_employment %>%
+  filter(year(Month) >= 1990, Title == "Retail Trade")
+
+us_retail_employment %>% 
+  autoplot(Employed)
+```
+
+```{r}
+us_retail_train <- us_retail_employment %>% 
+  filter(year(Month) <=2017)
+
+us_retail_fit <- us_retail_train %>%
+  model(
+    `Seasonal naïve` = SNAIVE(Employed),
+    `SE sin tendencia` = ETS(Employed ~ error("A") + trend("N") + season("A")),
+    `HW amortiguado aditivo` = ETS(Employed ~ error("A") + trend("Ad") + season("A"))
+  )
+
+# Pronóstico
+us_retail_fc <- us_retail_fit %>%
+  forecast(h = 21)
+
+gg_usret <- us_retail_fc %>%
+  autoplot(us_retail_employment, level = NULL) +
+  xlab("Year") + ylab("Employed") +
+  ggtitle("Forecasts for US Retail Employment") +
+  guides(colour=guide_legend(title="Forecast"))
+
+gg_usret_zoom <-  gg_usret + tidyquant::coord_x_date(xlim = c("2018-01-01","2019-09-01"), ylim = c(15250, 16500)) + ggtitle("") + 
+  theme(legend.position = "none")
+
+(gg_usret) / (gg_usret_zoom)
+```
+
+```{r}
+# Los errores de pronóstico
+accuracy(us_retail_fc, us_retail_employment)
+```
+
+Snaive es mejor.
+
+
+## Modelo de descomposición STL 
+
+Implementando modelos de descomposición STL para mdoelar la serie en dos componentes:
+
+- Para el componente estacional
+- Para la serie desestacionalizada, con suavización exponencial simple. 
+
+```{r}
+us_retail_fit <- us_retail_train %>%
+  model(
+    `Seasonal naïve` = SNAIVE(Employed),
+    `ETS automático` = ETS(Employed),
+    `Descomposición + SE` = decomposition_model(
+      STL(Employed ~ trend(), robust = TRUE),
+    ETS(season_adjust ~ error("A") + trend("N") + season("N"))
+    ),
+    `Descomposición + SE auto` = decomposition_model(
+      STL(Employed ~ trend(), robust = TRUE),
+    ETS(season_adjust)
+    )
+  )
+  
+# Pronóstico
+us_retail_fc <- us_retail_fit %>%
+  forecast(h = 21)
+
+gg_usret <- us_retail_fc %>%
+  autoplot(us_retail_employment, level = NULL) +
+  xlab("Year") + ylab("Employed") +
+  ggtitle("Forecasts for US Retail Employment") +
+  guides(colour=guide_legend(title="Forecast"))
+
+gg_usret_zoom <-  gg_usret + tidyquant::coord_x_date(xlim = c("2018-01-01","2019-09-01"), ylim = c(15250, 16500)) + ggtitle("") + 
+  theme(legend.position = "none")
+
+(gg_usret) / (gg_usret_zoom)
+```
+
+```{r}
+# Los errores de pronóstico
+accuracy(us_retail_fc, us_retail_employment) %>% arrange(MAPE)
+```
+
+Como podemos ver fue una mejor opción.
+
+## Combinación de modelos
+
+Podemos hacer la combinación de dos o más modelos:
+
+```{r}
+us_retail_fit2 <- us_retail_fit %>% 
+  mutate(
+    modelo_combinado = (`Seasonal naïve` + `Descomposición + SE`)/2
+    ) %>% 
+  select(-c(`ETS automático`, `Descomposición + SE auto`))
+
+accuracy(us_retail_fit2)
+```
+
+```{r}
+# Pronóstico
+us_retail_fc2 <- us_retail_fit2 %>%
+  forecast(h = 21)
+
+gg_usret <- us_retail_fc2 %>%
+  autoplot(us_retail_employment, level = NULL) +
+  xlab("Year") + ylab("Employed") +
+  ggtitle("Forecasts for US Retail Employment") +
+  guides(colour=guide_legend(title="Forecast"))
+
+gg_usret_zoom <-  gg_usret + tidyquant::coord_x_date(xlim = c("2018-01-01","2019-09-01"), ylim = c(15250, 16500)) + ggtitle("") + 
+  theme(legend.position = "none")
+
+(gg_usret) / (gg_usret_zoom)
+```
+
+```{r}
+# Los errores de pronóstico
+accuracy(us_retail_fc2, us_retail_employment)
+```
+
+Otro ejemplo:
+
+Sin patrón estacional marcado (comparando con drift):
+
+```{r}
+suecia <- global_economy %>%
+  filter(Country == "Sweden")
+
+suecia %>%
+  autoplot(GDP) +
+    ggtitle("PIB de Suecia") + ylab("$US billions")
+```
+
+```{r}
+suecia_train <- suecia %>% 
+  filter(Year <=2007)
+
+suecia_fit <- suecia_train %>%
+  model(
+    `Drift` = RW(GDP ~ drift()),
+    `Holt` = ETS(GDP ~ error("A") + trend("A") + season("N")),
+    `Holt amortiguado` = ETS(GDP ~ error("A") + trend("Ad") + season("N"))
+  )
+
+# Pronóstico
+suecia_fc <- suecia_fit %>%
+  forecast(h = 10)
+
+gg_suecia <- suecia_fc %>%
+  autoplot(suecia, level = NULL) +
+  xlab("Year") + ylab("GDP") +
+  ggtitle("Forecasts for Sweden's GDP") +
+  guides(colour=guide_legend(title="Forecast"))
+
+gg_suecia_zoom <-  gg_suecia + coord_cartesian(xlim = c(2000,2017), ylim = c(2e+11,7e+11)) + 
+  ggtitle("") + theme(legend.position = "none")
+
+(gg_suecia) / (gg_suecia_zoom)
+```
+```{r}
+# Los errores de pronóstico
+accuracy(suecia_fc, suecia) %>% select(MAPE, everything()) %>% arrange(MAPE)
+```
+
+Es mejor Drift en este caso.
 
