@@ -1,0 +1,42 @@
+---
+title: "08 Resumen Arima"
+author: "Eddie Aguilar"
+format:
+  html:
+    self-contained: true
+editor: source
+---
+
+```{r}
+#| message: false
+library(easypackages)
+libraries("tidyverse","fpp3", "patchwork")
+```
+
+ARIMA es otro modelo de pronóstico, a diferencia de ETS que se enfoca en la forma de la tendencia y estacionalidad, los modelos ARIMA tratan describir las autocorrelaciones en los datos. 
+
+# Estacionariedad y diferenciación
+
+Una serie de tiempo estacionaria (no confundir con estacionalidad) es aquella en la cual sus propiedades no dependen del tiempo en que son medidas. Por lo tanto, una serie con tendencia y/o estacionalidad no es estacionaria. 
+
+Un comportamiento cíclico sé es estacionario porque no depende de un periodo de tiempo fijo.
+
+O sea, no tendrá patrones visibles a lo largo del palzo. 
+
+Una gráfica estacionaria mostrará una serie horizontal y con varianza constante.
+
+Ejemplos:
+
+![](Imagenes/series_est.png){width=85%}
+- a y d tienen tendencia, por lo tanto no es estacionaria
+- c y f tienen estacionalidad, por lo tanto no es estacionaria
+- b y e son estacionarias (e parece tener estacionalidad, pero en realidad es un ciclo porque no es un periodo de tiempo definido)
+
+
+## Diferenciación 
+
+Como podemos ver en el ejemplo anterior, a) Precio de acción de Google tiene tendencia y no es estacionaria, sin embargo, b) Cambios diarios en el precio de acción de Google sí es estacionario. 
+
+Esto nos deja ver, que **una manera de convertir una serie en estacionaria es calculando las diferencias entre observaciones consecutivas**, esto se le llama diferenciar la serie:
+
+$$y'_t = y_t - t_{t-1}$$
