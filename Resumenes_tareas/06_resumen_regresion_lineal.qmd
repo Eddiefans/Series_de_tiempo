@@ -1,0 +1,14 @@
+---
+title: "06 Resumen Regresión Lineal"
+author: "Eddie Aguilar"
+format:
+  html:
+    self-contained: true
+editor: source
+---
+
+```{r}
+#| message: false
+library(easypackages)
+libraries("tidyverse","fpp3", "patchwork","plotly")
+```
