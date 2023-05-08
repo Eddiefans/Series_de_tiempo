@@ -12,3 +12,117 @@ editor: source
 library(easypackages)
 libraries("tidyverse","fpp3", "patchwork","plotly")
 ```
+
+Estos modelos se basan en encontrar relaciones lineales entre la serie a pronosticar y una o más series distintas. Por lo tanto, pronosticamos los valores de una serie, a partir de los cambios en otra serie que la afecte. 
+
+Ejemplo: La venta de helados tiene una relación con la temperatura, las ventas de Nike tiene relación con cuanto gastan en publicidad y mercadotecnia. 
+
+Por lo tanto, tenemos una variable de pronóstico y variables predictoras.
+
+# Modelo lineal 
+
+Modelo de regresión lineal simple:
+
+$$y_t = \beta_0 + \beta_1x_t + e_t$$
+
+donde:
+
+- $\beta_0$ es intercepto y representa el valor predicho cuando x = 0.
+- $\beta_1$ es la pendiente de la recta. Nos indica el cambio promedio en y, ante un cambio en una unidad de x.
+- $e_t$ es el error, se asume aleatorio y captura todos los cambios de otras variables que también pueden afectar a $y_t$ pero no se especifican. 
+
+Por lo tanto: 
+
+![](Imagenes/lineal_simple.png){width=80%, height=80%}
+
+## Ejemplo
+
+Tasas de crecimiento del gasto de consumo (y) y su relación con el ingreso personal disponible (x)
+
+```{r}
+us_change %>%
+  ggplot(aes(x = Quarter)) +
+  geom_line(aes(y = Consumption, colour = "Consumo")) +
+  geom_line(aes(y = Income, colour = "Ingreso")) +
+  ylab("cambio %") + xlab("Año") +
+  guides(colour=guide_legend(title="Series")) + 
+  theme(legend.position = "top")
+```
+
+Diagrama de dispersión entre ambas series:
+```{r}
+us_change %>%
+  ggplot(aes(x=Income, y=Consumption)) +
+    ylab("Consumo (cambio % trimestral)") +
+    xlab("Ingreso (cambio % trimestral)") +
+    geom_point() +
+    geom_smooth(method="lm", se=FALSE)
+```
+
+La línea sigue la ecuación de la regresión lineal.
+
+## Significado 
+
+El análisis de regresión en tiempos modernos trata sobre la relación de la dependencia entre una variable y, respecto de una o más variables exógenas (regresoras x) para predecir el valor promedio de la variable dependiente.
+
+Al hablar de funciones lineales, podemos referirnos a las variables x o a los parámetros $\beta$.
+En el caso de un modelo de regresión lineal, solo nos interesa la linealidad en los parámetros.
+
+Por lo tanto, las funciones de y pueden ser curvas o cualquier forma (exponencial cuadrática, cúbica) y seguirán siendo lineales en los parámetros y se pueden estimar con un modelo de regresión lineal. 
+
+Entonces, un modelo de regresión lineal puede generar una recta, curva dependiendo de la forma funcional. 
+
+# Ejemplos
+
+## US % change
+
+```{r}
+us_change
+```
+
+```{r}
+us_change %>% 
+  as_tibble() %>% 
+  select(-Quarter) %>% 
+  GGally::ggpairs()
+```
+
+
+```{r}
+us_change %>% 
+  pivot_longer(cols = -Quarter) %>% 
+  ggplot(aes(x = Quarter, y = value, color = name)) +
+  geom_line() +
+  facet_wrap(~ name, scales = "free_y") +
+  theme(legend.position = "none")
+```
+Comparando la variable de pronóstico (Consumo) vs las demás variables predictoras:
+```{r}
+us_change %>% 
+  pivot_longer(cols = -c(Quarter, Consumption)) %>% 
+  ggplot(aes(x = Quarter, y = value, color = name)) +
+  geom_line() +
+  geom_line(aes(y = Consumption), color = "black") +
+  facet_wrap(~ name, scales = "free_y") +
+  theme(legend.position = "none")
+```
+### Regresión lineal simple
+
+Aplicando un primer modelo, usando la variable predictora al ingreso disponible.
+
+```{r}
+fit1 <- us_change %>% 
+  model(reg_lin_simple = TSLM(Consumption ~ Income)
+        )
+fit1 %>%  report()
+```
+```{r}
+augment(fit1) %>% 
+  ggplot(aes(x = Quarter)) +
+  geom_line(aes(y = Consumption, color = "Datos")) +
+  geom_line(aes(y = .fitted, color = "Fitted"))+
+  xlab("Año") + ylab(NULL) +
+  ggtitle("Cambios porcentuales en el gasto de Consumo en EEUU") +
+  guides(color = guide_legend(title = NULL))
+```
+
