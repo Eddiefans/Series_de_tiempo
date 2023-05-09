@@ -287,7 +287,7 @@ Para saber cual es el mejor modelo entre dos, podemos usar los criterios de info
 - Cirterio de información de Akaike corregido por sesgo (AICc)
 - Criterio de información Batesiano (BIC).
 
-Sobre todo se puede utilizar AICc, sabiendo que tener menor sea, mejor ajuste tendrá el modelo. 
+Sobre todo se puede utilizar AICc, sabiendo que entre menor sea, mejor ajuste tendrá el modelo. 
 
 Viendo el report de los modelos anteriores, ARIMA(1,0,3) tiene un AICc = 342.08 y ARIMA(3,0,0) tiene un AICc = 340.67, por lo tanto ARIMA(3,0,0) es mejor modelo. 
 
