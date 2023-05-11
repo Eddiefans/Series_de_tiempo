@@ -1,0 +1,239 @@
+---
+title: "asdfasdf"
+author: "Eddie Aguilar"
+format:
+  html:
+    self-contained: true
+editor: source
+---
+
+```{r}
+#| message: false
+library("easypackages")
+packages("tidyverse","fpp3", "tsibble", "feasts","fable", "patchwork")
+library(plotly)
+```
+
+
+```{r}
+gdp <- read_csv("data_gdp.csv", show_col_types = FALSE) |> 
+  mutate(date = yearquarter(date)) |> 
+  as_tsibble(index = date)
+
+
+
+gov <- tidyquant::tq_get(x = "NCGGRNSAXDCMXQ", get = "economic.data", from = "1993-01-01")
+gov <- gov |> 
+  as_tsibble( index = date, key = symbol) |> 
+  rename( gov = price) %>% 
+  mutate(date = yearquarter(date)) %>% select(-symbol)
+
+ggplot() + 
+  geom_line(data = gov, mapping = aes(x = date, y = gov), color = "red") +
+  geom_line(data = gdp, mapping = aes(x = date, y = gov_exp), color = "blue", alpha = 0.5) 
+
+unem <- tidyquant::tq_get(x = "LRUNTTTTMXQ156N", get = "economic.data", from = "1993-01-01")
+unem <- unem |> 
+  as_tsibble( index = date, key = symbol) |> 
+  rename( unem = price) %>% 
+  mutate(date = yearquarter(date)) %>% select(-symbol)
+
+ggplot() + 
+  geom_line(data = unem, mapping = aes(x = date, y = unem), color = "red") +
+  geom_line(data = gdp, mapping = aes(x = date, y = unemployment), color = "blue", alpha = 0.5) 
+
+cons <- tidyquant::tq_get(x = "NCPRNSAXDCMXQ", get = "economic.data", from = "1993-01-01")
+cons <- cons |> 
+  as_tsibble( index = date, key = symbol) |> 
+  rename(cons = price) %>% 
+  mutate(date = yearquarter(date)) %>% select(-symbol)
+
+ggplot() + 
+  geom_line(data = cons, mapping = aes(x = date, y = cons), color = "red") +
+  geom_line(data = gdp, mapping = aes(x = date, y = consumption), color = "blue", alpha = 0.5)
+
+exp <- tidyquant::tq_get(x = "NXRNSAXDCMXQ", get = "economic.data", from = "1993-01-01")
+exp <- exp |> 
+  as_tsibble( index = date, key = symbol) |> 
+  rename(exp = price) %>% 
+  mutate(date = yearquarter(date)) %>% select(-symbol)
+
+ggplot() + 
+  geom_line(data = exp, mapping = aes(x = date, y = exp), color = "red") +
+  geom_line(data = gdp, mapping = aes(x = date, y = exports), color = "blue", alpha = 0.5)
+
+imp <- tidyquant::tq_get(x = "NMRNSAXDCMXQ", get = "economic.data", from = "1993-01-01")
+imp <- imp |> 
+  as_tsibble( index = date, key = symbol) |> 
+  rename(imp = price) %>% 
+  mutate(date = yearquarter(date)) %>% select(-symbol)
+
+ggplot() + 
+  geom_line(data = imp, mapping = aes(x = date, y = imp), color = "red") +
+  geom_line(data = gdp, mapping = aes(x = date, y = imports), color = "blue", alpha = 0.5)
+
+uncer <- tidyquant::tq_get(x = "WUIMEX", get = "economic.data", from = "1993-01-01")
+uncer <- uncer |> 
+  as_tsibble( index = date, key = symbol) |> 
+  rename(uncer = price) %>% 
+  mutate(date = yearquarter(date)) %>% select(-symbol)
+
+ggplot() + 
+  geom_line(data = uncer, mapping = aes(x = date, y = uncer), color = "red") +
+  geom_line(data = gdp, mapping = aes(x = date, y = uncertainty), color = "blue", alpha = 0.5)
+
+us <- tidyquant::tq_get(x = "CCUSMA02MXQ618N", get = "economic.data", from = "1993-01-01")
+us <- us |> 
+  as_tsibble( index = date, key = symbol) |> 
+  rename(us = price) %>% 
+  mutate(date = yearquarter(date)) %>% select(-symbol)
+
+ggplot() + 
+  geom_line(data = us, mapping = aes(x = date, y = us), color = "red") +
+  geom_line(data = gdp, mapping = aes(x = date, y = usd), color = "blue", alpha = 0.5)
+```
+
+```{r}
+train1 <- gov %>% filter_index('2000' ~ '2021-04-01')
+train2 <- unem %>% filter_index('2000' ~ '2021-04-01')
+train3 <- cons %>% filter_index('2000' ~ '2021-04-01')
+train4 <- exp %>% filter_index('2000' ~ '2021-04-01')
+train5 <- imp %>% filter_index('2000' ~ '2021-04-01')
+train6 <- uncer %>% filter_index('2000' ~ '2021-04-01')
+train7 <- us %>% filter_index('2000' ~ '2021-04-01')
+
+test1 <- gov %>% filter_index('2021-07-01' ~.)
+test2 <- unem %>% filter_index('2021-07-01' ~.)
+test3 <- cons %>% filter_index('2021-07-01' ~.)
+test4 <- exp %>% filter_index('2021-07-01' ~.)
+test5 <- imp %>% filter_index('2021-07-01' ~.)
+test6 <- uncer %>% filter_index('2021-07-01' ~.)
+test7 <- us %>% filter_index('2021-07-01' ~.)
+
+
+fit2 <- model(train1,
+             snaive = SNAIVE(log(gov)),
+             drift = RW(log(gov) ~ drift()),
+              hw = ETS(gov ~ error("M") + trend("A") + season("M")),
+              hwa = ETS(gov ~ error("M") + trend("Ad") + season("M")), 
+              auto = ETS(gov),
+              arima = ARIMA(gov ~ pdq(2,1,0) + PDQ(0,0,0)),
+              arima_auto = ARIMA(gov ~ PDQ(0,0,0)),
+              sarima = ARIMA(gov~ pdq(0,0,2) + PDQ(0,1,1)),
+              sarima2 = ARIMA(gov ~ pdq(1,0,0) + PDQ(1,1,0)),
+              sarima3 = ARIMA(gov ~ pdq(1,0,2) + PDQ(1,1,1)),
+              sarima4 = ARIMA(gov ~ pdq(1,1,2) + PDQ(1,1,1)),
+              sarima_auto = ARIMA(gov)
+              )
+fit2 <- model(train2,
+             snaive = SNAIVE(log(unem)),
+             drift = RW(log(unem) ~ drift()),
+              hw = ETS(unem ~ error("M") + trend("A") + season("M")),
+              hwa = ETS(unem ~ error("M") + trend("Ad") + season("M")), 
+              auto = ETS(unem),
+              arima = ARIMA(unem ~ pdq(2,1,0) + PDQ(0,0,0)),
+              arima_auto = ARIMA(unem ~ PDQ(0,0,0)),
+              sarima = ARIMA(unem~ pdq(0,0,2) + PDQ(0,1,1)),
+              sarima2 = ARIMA(unem ~ pdq(1,0,0) + PDQ(1,1,0)),
+              sarima3 = ARIMA(unem ~ pdq(1,0,2) + PDQ(1,1,1)),
+              sarima4 = ARIMA(unem ~ pdq(1,1,2) + PDQ(1,1,1)),
+              sarima_auto = ARIMA(unem)
+              )
+fit3 <- model(train3,
+             snaive = SNAIVE(log(cons)),
+             drift = RW(log(cons) ~ drift()),
+              hw = ETS(cons ~ error("M") + trend("A") + season("M")),
+              hwa = ETS(cons ~ error("M") + trend("Ad") + season("M")), 
+              auto = ETS(cons),
+              arima = ARIMA(cons ~ pdq(2,1,0) + PDQ(0,0,0)),
+              arima_auto = ARIMA(cons ~ PDQ(0,0,0)),
+              sarima = ARIMA(cons~ pdq(0,0,2) + PDQ(0,1,1)),
+              sarima2 = ARIMA(cons ~ pdq(1,0,0) + PDQ(1,1,0)),
+              sarima3 = ARIMA(cons ~ pdq(1,0,2) + PDQ(1,1,1)),
+              sarima4 = ARIMA(cons ~ pdq(1,1,2) + PDQ(1,1,1)),
+              sarima_auto = ARIMA(cons)
+              )
+fit4 <- model(train4,
+             snaive = SNAIVE(log(exp)),
+             drift = RW(log(exp) ~ drift()),
+              hw = ETS(exp ~ error("M") + trend("A") + season("M")),
+              hwa = ETS(exp ~ error("M") + trend("Ad") + season("M")), 
+              auto = ETS(exp),
+              arima = ARIMA(exp ~ pdq(2,1,0) + PDQ(0,0,0)),
+              arima_auto = ARIMA( exp~ PDQ(0,0,0)),
+              sarima = ARIMA(exp~ pdq(0,0,2) + PDQ(0,1,1)),
+              sarima2 = ARIMA(exp ~ pdq(1,0,0) + PDQ(1,1,0)),
+              sarima3 = ARIMA(exp ~ pdq(1,0,2) + PDQ(1,1,1)),
+              sarima4 = ARIMA(exp ~ pdq(1,1,2) + PDQ(1,1,1)),
+              sarima_auto = ARIMA(exp)
+              )
+fit5 <- model(train5,
+             snaive = SNAIVE(log(imp)),
+             drift = RW(log(imp) ~ drift()),
+              hw = ETS(imp ~ error("M") + trend("A") + season("M")),
+              hwa = ETS(imp ~ error("M") + trend("Ad") + season("M")), 
+              auto = ETS(imp),
+              arima = ARIMA(imp ~ pdq(2,1,0) + PDQ(0,0,0)),
+              arima_auto = ARIMA(imp ~ PDQ(0,0,0)),
+              sarima = ARIMA(imp~ pdq(0,0,2) + PDQ(0,1,1)),
+              sarima2 = ARIMA(imp ~ pdq(1,0,0) + PDQ(1,1,0)),
+              sarima3 = ARIMA(imp ~ pdq(1,0,2) + PDQ(1,1,1)),
+              sarima4 = ARIMA(imp ~ pdq(1,1,2) + PDQ(1,1,1)),
+              sarima_auto = ARIMA(imp)
+              )
+fit6 <- model(train6,
+             snaive = SNAIVE(log(uncer)),
+             drift = RW(log(uncer) ~ drift()),
+              hw = ETS(uncer ~ error("M") + trend("A") + season("M")),
+              hwa = ETS(uncer ~ error("M") + trend("Ad") + season("M")), 
+              auto = ETS(uncer),
+              arima = ARIMA(uncer ~ pdq(2,1,0) + PDQ(0,0,0)),
+              arima_auto = ARIMA(uncer ~ PDQ(0,0,0)),
+              sarima = ARIMA(uncer~ pdq(0,0,2) + PDQ(0,1,1)),
+              sarima2 = ARIMA(uncer ~ pdq(1,0,0) + PDQ(1,1,0)),
+              sarima3 = ARIMA(uncer ~ pdq(1,0,2) + PDQ(1,1,1)),
+              sarima4 = ARIMA(uncer ~ pdq(1,1,2) + PDQ(1,1,1)),
+              sarima_auto = ARIMA(uncer)
+              )
+fit7 <- model(train7,
+             snaive = SNAIVE(log(us)),
+             drift = RW(log(us) ~ drift()),
+              hw = ETS(us ~ error("M") + trend("A") + season("M")),
+              hwa = ETS(us ~ error("M") + trend("Ad") + season("M")), 
+              auto = ETS(us),
+              arima = ARIMA(us ~ pdq(2,1,0) + PDQ(0,0,0)),
+              arima_auto = ARIMA(us ~ PDQ(0,0,0)),
+              sarima = ARIMA(us~ pdq(0,0,2) + PDQ(0,1,1)),
+              sarima2 = ARIMA(us ~ pdq(1,0,0) + PDQ(1,1,0)),
+              sarima3 = ARIMA(us ~ pdq(1,0,2) + PDQ(1,1,1)),
+              sarima4 = ARIMA(us ~ pdq(1,1,2) + PDQ(1,1,1)),
+              sarima_auto = ARIMA(us)
+              )
+
+fc1 <- forecast(fit1, h = 6)
+fc2 <- forecast(fit2, h = 6)
+fc3 <- forecast(fit3, h = 6)
+fc4 <- forecast(fit4, h = 6)
+fc5 <- forecast(fit5, h = 6)
+fc6 <- forecast(fit6, h = 6)
+fc7 <- forecast(fit7, h = 6)
+
+fc1 %>% autoplot(filter_index(gov, "2010"~.), level = NULL)
+fc2 %>% autoplot(filter_index(unem, "2010"~.), level = NULL)
+fc3 %>% autoplot(filter_index(cons, "2010"~.), level = NULL)
+fc4 %>% autoplot(filter_index(exp, "2010"~.), level = NULL)
+fc5 %>% autoplot(filter_index(imp, "2010"~.), level = NULL)
+fc6 %>% autoplot(filter_index(uncer, "2010"~.), level = NULL)
+fc7 %>% autoplot(filter_index(us, "2010"~.), level = NULL)
+
+accuracy(fc1, test1) %>% select(.model, .type, MAPE) %>% arrange(MAPE)
+accuracy(fc2, test2) %>% select(.model, .type, MAPE) %>% arrange(MAPE)
+accuracy(fc3, test3) %>% select(.model, .type, MAPE) %>% arrange(MAPE)
+accuracy(fc4, test4) %>% select(.model, .type, MAPE) %>% arrange(MAPE)
+accuracy(fc5, test5) %>% select(.model, .type, MAPE) %>% arrange(MAPE)
+accuracy(fc6, test6) %>% select(.model, .type, MAPE) %>% arrange(MAPE)
+accuracy(fc7, test7) %>% select(.model, .type, MAPE) %>% arrange(MAPE)
+```
+
+
+

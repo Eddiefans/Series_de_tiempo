@@ -18,13 +18,208 @@ library(plotly)
 # Modelos de regresión dinámica
 
 # 1. Introducción
+
+Los modelos de suavización exponencial y ARIMA no pueden incluir información externa a la serie. 
+Por el otro lado, regresión lineal sí toma en cuenta otras variables, pero siempre asume que el error es ruido blanco. 
+Por lo tanto, podemosunir estos dos modelos y resultará en un modelo de regresión dinámica, igual que al lineal pero el error es modelado con ARIMA. 
+
+Hay que tomar en cuenta que en regresión dinámica, es necesario que todas las variables sean estacionarias. 
+
 # 2. Regresión con errores ARIMA en R con fable
+
+Al agregar pdq(d=1), R aplicará las primeras diferencias a todas las variables, si no se agrega los valores de pdq, R los buscará automáticamente. 
+
+```{r}
+ARIMA(y ~ x + pdq(1,1,0))
+```
+Ejemplo
+
+Analizar y pronosticar los cambios en el consumo personal a través de el ingreso disponible.  
+
+```{r}
+us_change <- read_csv("https://otexts.com/fpp3/extrafiles/us_change.csv") %>%
+  mutate(Time = yearquarter(Time)) %>%
+  as_tsibble(index = Time)
+```
+```{r}
+us_change %>%
+  gather("var", "value", Consumption, Income) %>%
+  ggplot(aes(x = Time, y = value)) +
+  geom_line() +
+  facet_grid(vars(var), scales = "free_y") +
+  xlab("Year") + ylab(NULL) +
+  ggtitle("Quarterly changes in US consumption and personal income")
+```
+
+```{r}
+us_change %>% 
+  ggplot(aes(x = Income, y = Consumption))+
+  geom_point()
+```
+pdq automáticos:
+```{r}
+fit <- us_change %>%
+  model(ARIMA(Consumption ~ Income))
+report(fit)
+```
+Viendo los errores de la regresión y de ARIMA con residuals(), los podemos seperar con type = "regression" y type = "innovations" para los errores ARIMA. 
+
+```{r}
+bind_rows(
+  `Regression Errors` = as_tibble(residuals(fit, type="regression")),
+  `ARIMA Errors` = as_tibble(residuals(fit, type="innovation")),
+  .id = "type"
+) %>%
+  ggplot(aes(x = Time, y = .resid)) +
+  geom_line() +
+  facet_grid(vars(type), scales = "free_y") +
+  xlab("Year") + ylab(NULL)
+```
+Asegurarnos que los errores ARIMA sean ruido blanco:
+
+```{r}
+fit %>% gg_tsresiduals()
+```
+Ljung-Box:
+```{r}
+augment(fit) %>%
+  features(.resid, ljung_box, dof = 5, lag = 8)
+```
+
+
 # 3. Pronóstico
+
+Para llevar a cabo pronósticos de modelos de regresión con errores ARIMA, se necesita realizar el pronóstico de:
+
+- La parte de la regresión
+- La parte de los erroes ARIMA
+
+y combinar los resultados. 
+
+Necesitamos pronósticos de las variables independientes o predictoras para poder pronosticar nuestra variable de interés. Si las predictoras no son conocidas en el futuro, tenemos que modelarlas por separado, o asumir valores futuros para cada una. 
+
+Ejemplo: 
+
+Regresando al consumo personal a partir del ingreso, podemos suponer que los cambios porcentuales en el ingreso serán iguales a el cambio promedio porcentual de los últimos 40 años: 
+
+```{r}
+us_change_future <- new_data(us_change, 8) %>% mutate(Income = mean(us_change$Income))
+forecast(fit, new_data = us_change_future) %>%
+  autoplot(slice_tail(us_change, n = 80)) + 
+  xlab("Year") +
+  ylab("Percentage change") + 
+  ggtitle("Pronóstico de regresión con errores ARIMA")
+```
+Comparando con ARIMA:
+
+```{r}
+fit_prev <- us_change %>%
+  model(ARIMA(Consumption ~ PDQ(0,0,0)))
+
+fit_prev %>% forecast(h=10) %>% 
+  autoplot(slice(us_change, (n()-80):n())) + 
+  ggtitle("Pronóstico con modelo ARIMA")
+```
+En este nuevo modelo, podemos capturar más informción, por lo tanto, los intervalos de predicción se reducen. 
+
+Hay que tomar en cuenta que los intervalos de predicción no toman en cuenta la incertidumbre de las predictoras. 
+
+Ejemplo:
+
+Demanda de energía a parir de temperatura.
+
+```{r}
+vic_elec_daily <- vic_elec %>%
+  filter(year(Time) == 2014) %>%
+  index_by(Date = date(Time)) %>%
+  summarise(
+    Demand = sum(Demand)/1e3,
+    Temperature = max(Temperature),
+    Holiday = any(Holiday)
+  ) %>%
+  mutate(Day_Type = case_when(
+    Holiday ~ "Holiday",
+    wday(Date) %in% 2:6 ~ "Weekday",
+    TRUE ~ "Weekend"
+  ))
+
+vic_elec_daily %>%
+  ggplot(aes(x=Temperature, y=Demand, colour=Day_Type)) +
+    geom_point() +
+    ylab("Electricity demand (GW)") +
+    xlab("Maximum daily temperature")
+```
+Como vemos, es una función cuadratica y la energia demandada sí depende del día y la temperatura. 
+
+Gráficas de tiempo:
+
+```{r}
+vic_elec_daily %>% 
+  pivot_longer(cols = c(Demand, Temperature), names_to = "vars",
+               values_to = "value") %>% 
+  ggplot(aes(x = Date, y = value)) + 
+  geom_line() + 
+  facet_wrap(~ vars, ncol = 1, strip.position = "right", scales = "free")
+```
+Al ser una relación cuadrática, ajustaremos el modelo cuadrático con errores ARIMA, y agregamos una variable para indicar si el día fue hábil o no. 
+
+```{r}
+fit <- vic_elec_daily %>%
+  model(ARIMA(Demand ~ Temperature + I(Temperature^2) + (Day_Type=="Weekday")))
+
+report(fit)
+```
+
+```{r}
+fit %>% gg_tsresiduals()
+```
+```{r}
+augment(fit) %>%
+  features(.resid, ljung_box, dof = 8, lag = 14)
+```
+
+Al momento de pronosticar, necesitamos datos respecto a la tempreatura futura y podemos hacer dos cosas:
+
+- Conseguir los datos de algún pronóstico meteorológico y meterlos al modelo. 
+- Podemos pronosticar bajo un escenario. Asumiremos que la temperatura máxima se mantendrá constante a 26 grados. 
+
+```{r}
+vic_elec_future <- new_data(vic_elec_daily, 14) %>%
+  mutate(
+    Temperature = 26,
+    Holiday = c(TRUE, rep(FALSE, 13)),
+    Day_Type = case_when(
+      Holiday ~ "Holiday",
+      wday(Date) %in% 2:6 ~ "Weekday",
+      TRUE ~ "Weekend"
+    )
+  )
+forecast(fit, vic_elec_future) %>%
+  autoplot(vic_elec_daily) + ylab("Electricity demand (GW)")
+```
+
+```{r}
+vic_elec_future <- new_data(vic_elec_daily, 14) %>%
+  mutate(
+    Temperature = c(seq(31,34),33,rep(34,3),rep(33,6)),
+    Holiday = c(TRUE, rep(FALSE, 13)),
+    Day_Type = case_when(
+      Holiday ~ "Holiday",
+      wday(Date) %in% 2:6 ~ "Weekday",
+      TRUE ~ "Weekend"
+    )
+  )
+vic_elec_future
+
+forecast(fit, vic_elec_future) %>%
+  autoplot(vic_elec_daily) + ylab("Electricity demand (GW)")
+```
+
 # 4. Regresión armónica dinámica
 
 Las series de Fourier es un método alternativo de los dummies muy bueno para periodos estacionales muy largos. Ya que ARIMA y ETS son métodos que estiman estacionalidad, pero pierde efectividad entre mayor sea el periodo estacional, y que, las dummies estiman estacionalidad de cualquier tamaño, pero si es un periodo muy grande, se necesitarán muchas variables, el uso de series de Fourier es buena opción. 
 
-Una serie de FOurier es una función básica trigonométrica, tiene un seno y un coseno. Al ser una función trigonométrica periódica, simula una estacionalidad y el uso de esta nos puede ayudar a pronosticar una serie estacional. 
+Una serie de Fourier es una función básica trigonométrica, tiene un seno y un coseno. Al ser una función trigonométrica periódica, simula una estacionalidad y el uso de esta nos puede ayudar a pronosticar una serie estacional. 
 
 Como se comentó, una serie de Fourier se consituye de un seno y coseno, y se pueden utilizar tantos pares de senos y cosenos como se desea. 
 

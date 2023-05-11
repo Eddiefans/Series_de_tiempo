@@ -1,0 +1,378 @@
+---
+title: "Proyecto final"
+author: "Eddie Aguilar"
+format:
+  html:
+    self-contained: true
+editor: source
+---
+
+```{r}
+#| message: false
+library("easypackages")
+packages("tidyverse","fpp3", "tsibble", "feasts","fable", "patchwork")
+library(plotly)
+```
+
+# Importar datos 
+
+```{r}
+(gdp <- read_csv("data_gdp.csv", show_col_types = FALSE) |> 
+  mutate(date = yearquarter(date)) |> 
+  as_tsibble(index = date))
+
+```
+
+```{r}
+dcmp <- gdp %>%
+  model(Descomposicion = STL(gdp))
+dcmp
+
+autoplot(components(dcmp))
+```
+
+
+```{r}
+gdpre <- tidyquant::tq_get(x = "NGDPRNSAXDCMXQ", get = "economic.data", from = "1993-01-01")
+
+(gdpre <- gdpre |> 
+  as_tsibble( index = date, key = symbol) |> 
+  rename( gdp = price) %>% 
+  mutate(date = yearquarter(date)) %>% select(-symbol))
+
+
+```
+
+
+```{r}
+ggplot() +
+  geom_line(data = gdpre, mapping = aes(x = date, y = gdp), color = "red") +
+  geom_line(data = gdp, mapping = aes(x = date, y = gdp), color = "blue", alpha = 0.5)
+```
+
+```{r}
+gdp <- append_row(gdp, 6)
+
+(gdp <- mutate(gdp, gdpreal = gdpre$gdp) %>% select(date, gdp, gdpreal, everything()))
+
+```
+
+```{r}
+(train <- gdp %>% filter_index('2000' ~ '2021-04-01'))
+
+(test <- gdp %>% filter_index('2021-07-01' ~.))
+```
+```{r}
+fit1 <- model(train,
+             snaive = SNAIVE(log(gdpreal)),
+             drift = RW(log(gdpreal) ~ drift())
+             )
+fit2 <- model(train, 
+              hw = ETS(gdpreal ~ error("M") + trend("A") + season("M")),
+              hwa = ETS(gdpreal ~ error("M") + trend("Ad") + season("M")), 
+              auto = ETS(gdpreal))
+
+
+```
+
+```{r}
+features(train, log(gdpreal), unitroot_kpss)
+features(train, log(gdpreal), unitroot_ndiffs)
+
+atrain <- mutate(train, diff = difference(log(gdpreal), 1))
+features(atrain, diff, unitroot_kpss)
+features(atrain, diff, unitroot_ndiffs)
+
+train %>% PACF(log(gdpreal)) %>% autoplot()
+train %>% ACF(log(gdpreal)) %>% autoplot()
+
+fit3 <- model(train, 
+              arima = ARIMA(gdpreal ~ pdq(2,1,0) + PDQ(0,0,0)),
+              arima_auto = ARIMA(gdpreal ~ PDQ(0,0,0)),
+              )
+```
+
+```{r}
+train %>% gg_tsdisplay(difference(gdpreal, 4) , plot_type='partial')
+```
+
+```{r}
+fit4 <- model(train, 
+              sarima = ARIMA(gdpreal ~ pdq(0,0,2) + PDQ(0,1,1)),
+              sarima2 = ARIMA(gdpreal ~ pdq(1,0,0) + PDQ(1,1,0)),
+              sarima3 = ARIMA(gdpreal ~ pdq(1,0,2) + PDQ(1,1,1)),
+              sarima4 = ARIMA(gdpreal ~ pdq(1,1,2) + PDQ(1,1,1)),
+              sarima_auto = ARIMA(gdpreal)
+              )
+report(fit4)
+```
+
+```{r}
+#| message: false
+train %>% 
+  as_tibble() %>% 
+  select(-date, -gdpreal) %>% 
+  GGally::ggpairs()
+
+train %>% 
+  pivot_longer(cols = c(-date, -gdpreal)) %>% 
+  ggplot(aes(x = date, y = value, color = name)) +
+  geom_line() +
+  facet_wrap(~ name, scales = "free_y") +
+  theme(legend.position = "none")
+
+train %>% 
+  pivot_longer(cols = -c(date, gdpreal, gdp)) %>% 
+  ggplot(aes(x = date, y = value, color = name)) +
+  geom_line() +
+  geom_line(aes(y = gdp), color = "black") +
+  facet_wrap(~ name, scales = "free_y") +
+  theme(legend.position = "none")
+
+
+```
+```{r}
+model(train, 
+      i = TSLM(gdpreal ~ consumption),
+      ii = TSLM(gdpreal ~ exports),
+      iii = TSLM(gdpreal ~ gov_exp),
+      iv = TSLM(gdpreal ~ imports),
+      v = TSLM(gdpreal ~ uncertainty),
+      vi = TSLM(gdpreal ~ unemployment),
+      vii = TSLM(gdpreal ~ usd)
+      ) %>% glance() %>% 
+  select(.model, AICc, BIC) %>% arrange(AICc)
+
+model(train, 
+      o = TSLM(gdpreal ~ imports),
+      i = TSLM(gdpreal ~ imports + consumption),
+      ii = TSLM(gdpreal ~ imports + exports),
+      iii = TSLM(gdpreal ~ imports + gov_exp),
+      iv = TSLM(gdpreal ~ imports + uncertainty),
+      v = TSLM(gdpreal ~ imports + unemployment),
+      vi = TSLM(gdpreal ~ imports + usd)
+      ) %>% glance() %>% 
+  select(.model, AICc, BIC) %>% arrange(AICc)
+
+model(train, 
+      o = TSLM(gdpreal ~ imports + gov_exp),
+      i = TSLM(gdpreal ~ imports + gov_exp + consumption),
+      ii = TSLM(gdpreal ~ imports + gov_exp + exports),
+      iii = TSLM(gdpreal ~ imports + gov_exp + uncertainty),
+      iv = TSLM(gdpreal ~ imports + gov_exp + unemployment),
+      v = TSLM(gdpreal ~ imports + gov_exp + usd)
+      ) %>% glance() %>% 
+  select(.model, AICc, BIC) %>% arrange(AICc)
+
+model(train, 
+      o = TSLM(gdpreal ~ imports + gov_exp + consumption),
+      i = TSLM(gdpreal ~ imports + gov_exp + consumption + exports),
+      ii = TSLM(gdpreal ~ imports + gov_exp + consumption + uncertainty),
+      iii = TSLM(gdpreal ~ imports + gov_exp + consumption + unemployment),
+      iv = TSLM(gdpreal ~ imports + gov_exp + consumption + usd)
+      ) %>% glance() %>% 
+  select(.model, AICc, BIC) %>% arrange(AICc)
+
+model(train, 
+      o = TSLM(gdpreal ~ imports + gov_exp + consumption + usd),
+      i = TSLM(gdpreal ~ imports + gov_exp + consumption + usd + exports),
+      ii = TSLM(gdpreal ~ imports + gov_exp + consumption + usd + uncertainty),
+      iii = TSLM(gdpreal ~ imports + gov_exp + consumption + usd + unemployment)
+      ) %>% glance() %>% 
+  select(.model, AICc, BIC) %>% arrange(AICc)
+
+model(train, 
+      o = TSLM(gdpreal ~ imports + gov_exp + consumption + usd + exports),
+      i = TSLM(gdpreal ~ imports + gov_exp + consumption + usd + exports + uncertainty),
+      ii = TSLM(gdpreal ~ imports + gov_exp + consumption + usd + exports + unemployment)
+      ) %>% glance() %>% 
+  select(.model, AICc, BIC) %>% arrange(AICc)
+
+model(train, 
+      o = TSLM(gdpreal ~ imports + gov_exp + consumption + usd + exports + unemployment),
+      i = TSLM(gdpreal ~ imports + gov_exp + consumption + usd + exports + unemployment + uncertainty)
+      ) %>% glance() %>% 
+  select(.model, AICc, BIC) %>% arrange(AICc)
+
+model(train, 
+      o = TSLM(gdpreal ~ imports + gov_exp + consumption + usd + exports + unemployment),
+      i = TSLM(gdpreal ~ imports + gov_exp + consumption + usd + exports + unemployment + uncertainty)
+      ) %>% glance() %>% 
+  select(.model, AICc, BIC) %>% arrange(AICc)
+
+fit5 <- model(train, 
+      regresion = TSLM(gdpreal ~ imports + gov_exp + consumption + usd + exports + unemployment + uncertainty))
+
+consumo <- train %>% 
+  model(
+    ETS = ETS(consumption),
+    ARIMA = ARIMA(consumption)
+  ) %>% 
+  forecast(h = 6)
+consumo %>% 
+  autoplot(train, level = NULL)
+
+gob <- train %>% 
+  model(
+    snaive = SNAIVE(log(gov_exp)),
+    ETS = ETS(gov_exp),
+    ARIMA = ARIMA(gov_exp)
+  ) %>% 
+  forecast(h = 6)
+gob %>% 
+  autoplot(train, level = NULL)
+
+imp <- train %>% 
+  model(
+    ETS = ETS(imports),
+    ARIMA = ARIMA(imports)
+  ) %>% 
+  forecast(h = 6)
+imp %>% 
+  autoplot(train, level = NULL)
+
+exp <- train %>% 
+  model(
+    SARIMA = ARIMA(exports ~ pdq(0,0,2) + PDQ(0,1,1)),
+    ETS = ETS(exports),
+    ARIMA = ARIMA(exports)
+  ) %>% 
+  forecast(h = 6)
+exp %>% 
+  autoplot(train, level = NULL)
+
+desempleo <- train %>% 
+  model(
+    ETS = ETS(unemployment),
+    ARIMA = ARIMA(unemployment)
+  ) %>% 
+  forecast(h = 6)
+desempleo %>% 
+  autoplot(train, level = NULL)
+
+cambio <- train %>% 
+  model(
+    ETS = ETS(usd),
+    ARIMA = ARIMA(usd ~ pdq(2,1,0) + PDQ(0,0,0))
+  ) %>% 
+  forecast(h = 6)
+cambio %>% 
+  autoplot(train, level = NULL)
+
+incertidumbre <- train %>% 
+  model(
+    ETS = ETS(uncertainty),
+    ARIMA = ARIMA(uncertainty)
+  ) %>% 
+  forecast(h = 6)
+incertidumbre %>% 
+  autoplot(train, level = NULL)
+
+futuro <- new_data(train, 6) %>% 
+  mutate(consumption = consumo %>% filter(.model == "ETS") %>% pull(.mean),
+         gov_exp = gob %>% filter(.model == "snaive") %>% pull(.mean),
+         imports = imp %>% filter(.model == "ARIMA") %>% pull(.mean),
+         exports = exp %>% filter(.model == "SARIMA") %>% pull(.mean),
+         unemployment = desempleo %>% filter(.model == "ETS") %>% pull(.mean),
+         usd = cambio %>% filter(.model == "ARIMA") %>% pull(.mean),
+         uncertainty = incertidumbre %>% filter(.model == "ETS") %>% pull(.mean)
+         )
+```
+```{r}
+train2 <- train %>% mutate(
+  q2_20 = if_else(date == yearquarter("2020 Q2"),1,0),
+  q3_20 = if_else(date == yearquarter("2020 Q3"),1,0)
+)
+train2
+
+futuro2 <- new_data(train, 6) %>% 
+  mutate(consumption = consumo %>% filter(.model == "ETS") %>% pull(.mean),
+         gov_exp = gob %>% filter(.model == "snaive") %>% pull(.mean),
+         imports = imp %>% filter(.model == "ARIMA") %>% pull(.mean),
+         exports = exp %>% filter(.model == "SARIMA") %>% pull(.mean),
+         unemployment = desempleo %>% filter(.model == "ETS") %>% pull(.mean),
+         usd = cambio %>% filter(.model == "ARIMA") %>% pull(.mean),
+         uncertainty = incertidumbre %>% filter(.model == "ETS") %>% pull(.mean),
+         q2_20 = c(1, 1, 1, 1, 1, 1),
+         q3_20  =c(1, 1, 1, 1, 1, 1)
+         )
+
+fit7 <- model(train2, dummy1= TSLM(gdpreal ~ imports + gov_exp + consumption + usd + exports + unemployment + uncertainty + q2_20 + q3_20),
+              dummy2= TSLM(gdpreal ~ imports + gov_exp + consumption + usd + exports + unemployment + uncertainty + season() + trend() + q2_20 + q3_20))
+
+```
+
+
+```{r}
+fit6 <- model(train, 
+              dinamica = ARIMA(gdpreal ~ imports + gov_exp + consumption + usd + exports + unemployment + uncertainty),
+              dinamica2 = ARIMA(gdpreal ~ imports + gov_exp + consumption + usd + exports + unemployment + uncertainty + pdq(1,0,2) + PDQ(1,1,1)),
+              dinamica3 = ARIMA(gdpreal ~ imports + gov_exp + consumption + usd + exports + unemployment + uncertainty + pdq(1,1,2) + PDQ(1,1,1)))
+```
+
+```{r}
+fit8 <- train %>%
+  model(
+    k1 = ARIMA(gdpreal ~ imports + gov_exp + consumption + usd + exports + unemployment + uncertainty+ fourier(K = 1) + PDQ(0,0,0)),
+    k2 = ARIMA(gdpreal ~ imports + gov_exp + consumption + usd + exports + unemployment + uncertainty + fourier(K = 2) + PDQ(0,0,0)),
+    k3 = ARIMA(gdpreal ~ imports + gov_exp + consumption + usd + exports + unemployment + uncertainty+ fourier(K = 1) + pdq(1,0,2) + PDQ(0,0,0))
+  )
+glance(fit8)
+
+fit9 <- train2 %>% 
+  model(
+    k5 = ARIMA(gdpreal ~ imports + gov_exp + consumption + usd + exports + unemployment + uncertainty+ fourier(K = 1) + pdq(1,1,2) + PDQ(0,0,0)  + q2_20 + q3_20),
+    k6 = TSLM(gdpreal ~ imports + gov_exp + consumption + usd + exports + unemployment + uncertainty+ fourier(K = 1) + q2_20 + q3_20)
+  )
+glance(fit9)
+```
+
+
+```{r}
+fc1 <- forecast(fit1, h = 6)
+fc2 <- forecast(fit2, h = 6)
+fc3 <- forecast(fit3, h = 6)
+fc4 <- forecast(fit4, h = 6)
+fc5 <- forecast(fit5, futuro)
+fc6 <- forecast(fit6, futuro)
+fc7 <- forecast(fit7, futuro2)
+fc8 <- forecast(fit8, futuro)
+fc9 <- forecast(fit9, futuro2)
+```
+
+```{r}
+fc1 %>% autoplot(filter_index(gdp, "2010"~.), level = NULL)
+fc2 %>% autoplot(filter_index(gdp, "2010"~.), level = NULL)
+fc3 %>% autoplot(filter_index(gdp, "2010"~.), level = NULL)
+fc4 %>% autoplot(filter_index(gdp, "2010"~.), level = NULL)
+fc5 %>% autoplot(filter_index(gdp, "2010"~.), level = NULL)
+fc6 %>% autoplot(filter_index(gdp, "2010"~.), level = NULL)
+fc7 %>% autoplot(filter_index(gdp, "2010"~.), level = NULL)
+fc8 %>% autoplot(filter_index(gdp, "2010"~.), level = NULL)
+fc9 %>% autoplot(filter_index(gdp, "2010"~.), level = NULL)
+```
+
+```{r}
+accuracy(fit1) %>% select(.model, .type, MAPE) %>% arrange(MAPE)
+accuracy(fit2) %>% select(.model, .type, MAPE) %>% arrange(MAPE)
+accuracy(fit3) %>% select(.model, .type, MAPE) %>% arrange(MAPE)
+accuracy(fit4) %>% select(.model, .type, MAPE) %>% arrange(MAPE)
+accuracy(fit5) %>% select(.model, .type, MAPE) %>% arrange(MAPE)
+accuracy(fit6) %>% select(.model, .type, MAPE) %>% arrange(MAPE)
+accuracy(fit7) %>% select(.model, .type, MAPE) %>% arrange(MAPE)
+accuracy(fit8) %>% select(.model, .type, MAPE) %>% arrange(MAPE)
+accuracy(fit9) %>% select(.model, .type, MAPE) %>% arrange(MAPE)
+```
+
+```{r}
+accuracy(fc1, test) %>% select(.model, .type, MAPE) %>% arrange(MAPE)
+accuracy(fc2, test) %>% select(.model, .type, MAPE) %>% arrange(MAPE)
+accuracy(fc3, test) %>% select(.model, .type, MAPE) %>% arrange(MAPE)
+accuracy(fc4, test) %>% select(.model, .type, MAPE) %>% arrange(MAPE)
+accuracy(fc5, test) %>% select(.model, .type, MAPE) %>% arrange(MAPE)
+accuracy(fc6, test) %>% select(.model, .type, MAPE) %>% arrange(MAPE)
+accuracy(fc7, test) %>% select(.model, .type, MAPE) %>% arrange(MAPE)
+accuracy(fc8, test) %>% select(.model, .type, MAPE) %>% arrange(MAPE)
+accuracy(fc9, test) %>% select(.model, .type, MAPE) %>% arrange(MAPE)
+```
+
