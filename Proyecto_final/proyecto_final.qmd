@@ -46,6 +46,16 @@ Se tiene que predecir el valor de "gdp" para los siguientes 6 trimestres.
 
 Relación de las variables con el PIB. 
 
+- date. Indica la fecha actual.
+- Gdp. Es una medida que representa el valor total de los bienes y servicios producidos en un país. Se utiliza para predecir la salud económica.
+- Consumption. Es el gasto total en bienes y servicios realizado por las personas, hogares y gobierno. Muestra cuánto se está consumiendo en la economía. 
+- Gov_exp. Es el gasto del gobierno en bienes y servicios de consumo, incluyendo salarios y defensa. Puede influir en la actividad económica general.
+- Imports. Son los productos y servicios comprados de otros países. Permiten acceder a productos más baratos o de mejor calidad, y pueden impulsar la productividad.
+- Exports. Son los bienes y servicios vendidos a otros países. Generan ingresos y contribuyen al crecimiento económico.
+- Unemployment. Representa a las personas sin empleo que buscan trabajo. Su disminución puede indicar un aumento en el crecimiento económico.
+- Usd. Es el tipo de cambio del dólar estadounidense. Afecta el costo de las importaciones y exportaciones, y puede influir en la inversión extranjera.
+- Uncertainty. La falta de claridad en la economía puede afectar la inversión y el consumo, especialmente en una economía dependiente del comercio internacional y la inversión extranjera como México.
+
 ## 3.2 EDA
 
 ### Visualización
@@ -115,7 +125,7 @@ gdp |>
 #| message: false
 gdp %>% 
   as_tibble() %>% 
-  select(-date, -gdp) %>% 
+  select(-date) %>% 
   GGally::ggpairs()
 ```
 ### Transformaciones
@@ -525,16 +535,16 @@ Tomando en cuenta el error, el mejor modelo fue:
 
 
 ```{r}
-equipo_ <- model(train, 
-      equipo_ = ARIMA(gdp ~ imports + gov_exp + consumption + usd + exports + unemployment + uncertainty+ fourier(K = 1) + pdq(1,0,2) + PDQ(0,0,0))
+equipo_5 <- model(train, 
+      equipo_5 = ARIMA(gdp ~ imports + gov_exp + consumption + usd + exports + unemployment + uncertainty+ fourier(K = 1) + pdq(1,0,2) + PDQ(0,0,0))
       )
-save(equipo_, file = "equipo_.RData")
+save(equipo_5, file = "equipo_5.RData")
 ```
 
 ### Mejor pronóstico
 
 ```{r}
-fc_final <- forecast(equipo_, futuro)
+fc_final <- forecast(equipo_5, futuro)
 fc_final %>% autoplot(filter_index(gdp, "2010"~.))
 ```
 
