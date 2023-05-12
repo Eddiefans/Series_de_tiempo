@@ -425,14 +425,14 @@ accuracy(fit9) %>% select(.model, .type, MAPE) %>% arrange(MAPE)
 
 ```{r}
 #| echo: true
-equipo_5 <- model(train, 
+(equipo_5 <- model(train, 
       equipo_5 = ARIMA(gdp ~ imports + gov_exp + consumption + usd + exports + unemployment + uncertainty+ fourier(K = 1) + pdq(1,0,2) + PDQ(0,0,0))
-      )
+      ) |> forecast(futuro))
+save(equipo_5, file = "equipo_5.RData")
 ```
 
 ## **Mejor pronóstico**
 
 ```{r}
-fc_final <- forecast(equipo_5, futuro)
-fc_final %>% autoplot(filter_index(gdp, "2010"~.))
+equipo_5 %>% autoplot(filter_index(gdp, "2010"~.))
 ```
