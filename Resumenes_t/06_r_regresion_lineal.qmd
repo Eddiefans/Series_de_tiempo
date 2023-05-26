@@ -1,0 +1,667 @@
+---
+title: "06 Resumen Regresión Lineal"
+author: "Eddie Aguilar"
+format:
+  html:
+    self-contained: true
+editor: source
+---
+
+```{r}
+#| message: false
+library(easypackages)
+libraries("tidyverse","fpp3", "patchwork","plotly")
+```
+
+Estos modelos se basan en encontrar relaciones lineales entre la serie a pronosticar y una o más series distintas. Por lo tanto, pronosticamos los valores de una serie, a partir de los cambios en otra serie que la afecte. 
+
+Ejemplo: La venta de helados tiene una relación con la temperatura, las ventas de Nike tiene relación con cuanto gastan en publicidad y mercadotecnia. 
+
+Por lo tanto, tenemos una variable de pronóstico y variables predictoras.
+
+# Modelo lineal 
+
+Modelo de regresión lineal simple:
+
+$$y_t = \beta_0 + \beta_1x_t + e_t$$
+
+donde:
+
+- $\beta_0$ es intercepto y representa el valor predicho cuando x = 0.
+- $\beta_1$ es la pendiente de la recta. Nos indica el cambio promedio en y, ante un cambio en una unidad de x.
+- $e_t$ es el error, se asume aleatorio y captura todos los cambios de otras variables que también pueden afectar a $y_t$ pero no se especifican. 
+
+Por lo tanto: 
+
+![](Imagenes/lineal_simple.png){width=80%, height=80%}
+
+## Ejemplo
+
+Tasas de crecimiento del gasto de consumo (y) y su relación con el ingreso personal disponible (x)
+
+```{r}
+us_change %>%
+  ggplot(aes(x = Quarter)) +
+  geom_line(aes(y = Consumption, colour = "Consumo")) +
+  geom_line(aes(y = Income, colour = "Ingreso")) +
+  ylab("cambio %") + xlab("Año") +
+  guides(colour=guide_legend(title="Series")) + 
+  theme(legend.position = "top")
+```
+
+Diagrama de dispersión entre ambas series:
+```{r}
+us_change %>%
+  ggplot(aes(x=Income, y=Consumption)) +
+    ylab("Consumo (cambio % trimestral)") +
+    xlab("Ingreso (cambio % trimestral)") +
+    geom_point() +
+    geom_smooth(method="lm", se=FALSE)
+```
+
+La línea sigue la ecuación de la regresión lineal.
+
+## Significado 
+
+El análisis de regresión en tiempos modernos trata sobre la relación de la dependencia entre una variable y, respecto de una o más variables exógenas (regresoras x) para predecir el valor promedio de la variable dependiente.
+
+Al hablar de funciones lineales, podemos referirnos a las variables x o a los parámetros $\beta$.
+En el caso de un modelo de regresión lineal, solo nos interesa la linealidad en los parámetros.
+
+Por lo tanto, las funciones de y pueden ser curvas o cualquier forma (exponencial cuadrática, cúbica) y seguirán siendo lineales en los parámetros y se pueden estimar con un modelo de regresión lineal. 
+
+Entonces, un modelo de regresión lineal puede generar una recta, curva dependiendo de la forma funcional. 
+
+# Ejemplos
+
+## US % change
+
+$$y_{consumo} = \beta_0 + \beta_1x_{income} +\beta_2x_{production}+\beta_3x_{savings}+\beta_4x_{unemployment} + e_t$$
+
+```{r}
+us_change
+```
+
+```{r}
+us_change %>% 
+  as_tibble() %>% 
+  select(-Quarter) %>% 
+  GGally::ggpairs()
+```
+
+
+```{r}
+us_change %>% 
+  pivot_longer(cols = -Quarter) %>% 
+  ggplot(aes(x = Quarter, y = value, color = name)) +
+  geom_line() +
+  facet_wrap(~ name, scales = "free_y") +
+  theme(legend.position = "none")
+```
+Comparando la variable de pronóstico (Consumo) vs las demás variables predictoras:
+```{r}
+us_change %>% 
+  pivot_longer(cols = -c(Quarter, Consumption)) %>% 
+  ggplot(aes(x = Quarter, y = value, color = name)) +
+  geom_line() +
+  geom_line(aes(y = Consumption), color = "black") +
+  facet_wrap(~ name, scales = "free_y") +
+  theme(legend.position = "none")
+```
+# Regresión lineal simple
+
+Aplicando un primer modelo, usando la variable predictora del ingreso disponible.
+
+```{r}
+fit1 <- us_change %>% 
+  model(reg_lin_simple = TSLM(Consumption ~ Income)
+        )
+fit1 %>%  report()
+```
+```{r}
+augment(fit1) %>% 
+  ggplot(aes(x = Quarter)) +
+  geom_line(aes(y = Consumption, color = "Datos")) +
+  geom_line(aes(y = .fitted, color = "Fitted"))+
+  xlab("Año") + ylab(NULL) +
+  ggtitle("Cambios porcentuales en el gasto de Consumo en EEUU") +
+  guides(color = guide_legend(title = NULL))
+```
+No parece ajustarse bien.
+
+```{r}
+augment(fit1) %>% 
+  ggplot(aes(x = Consumption, y = .fitted)) +
+  geom_point() +
+  ylab("Fitted (valores ajustados)") +
+  xlab("Datos (reales históricos)") +
+  ggtitle("Cambios porcentuales en el gasto de Consumo en EEUU") +
+  geom_abline(intercept = 0, slope = 1)
+```
+
+```{r}
+fit1 %>% 
+  gg_tsresiduals()
+```
+
+```{r}
+augment(fit1) %>% 
+  features(.resid, ljung_box, lag= 10, dof = 2)
+```
+Se puede mejorar bastante. 
+
+# Regresión lineal múltiple
+
+$$y_{consumo} = \beta_0 + \beta_1x_{income} +\beta_2x_{production}+\beta_3x_{savings}+\beta_4x_{unemployment} + e_t$$
+
+```{r}
+fit2 <- us_change %>% 
+  model(
+    reg_lin_multiple = TSLM(Consumption ~ Income + Production + Savings + Unemployment)
+  )
+report(fit2)
+```
+
+```{r}
+augment(fit2) %>% 
+  ggplot(aes(x = Quarter)) +
+  geom_line(aes(y = Consumption, color = "Datos")) +
+  geom_line(aes(y = .fitted, color = "Fitted"))+
+  xlab("Año") + ylab(NULL) +
+  ggtitle("Cambios porcentuales en el gasto de Consumo en EEUU") +
+  guides(color = guide_legend(title = NULL))
+```
+
+```{r}
+augment(fit2) %>% 
+  ggplot(aes(x = Consumption, y = .fitted)) +
+  geom_point() +
+  ylab("Fitted (valores ajustados)") +
+  xlab("Datos (reales históricos)") +
+  ggtitle("Cambios porcentuales en el gasto de Consumo en EEUU") +
+  geom_abline(intercept = 0, slope = 1)
+```
+
+```{r}
+fit2 %>% 
+  gg_tsresiduals()
+```
+
+```{r}
+augment(fit2) %>% 
+  features(.resid, ljung_box, lag= 10, dof = 2)
+```
+
+```{r}
+df <- left_join(us_change, residuals(fit2), by = "Quarter")
+df %>% 
+  select(-c(Consumption, .model)) %>% 
+  pivot_longer(cols = c(Income:Unemployment)) %>% 
+  ggplot(aes( x = value, y = .resid, color = name)) + 
+  geom_point() + ylab("Residuales") + xlab("Predictoras") +
+  facet_wrap(~ name, scales = "free_x") +
+  theme(legend.position = "none")
+```
+
+```{r}
+augment(fit2) %>% 
+  ggplot(aes(x = .fitted, y = .resid)) +
+  geom_point() +
+  labs(x = "Ajustados", y = "Residuales")
+```
+
+```{r}
+glance(fit2) %>% 
+  select(adj_r_squared, AIC, AICc, BIC)
+```
+
+# Selección de predictoras
+
+## Escoger subconjunto de predictoras y probarlo
+
+```{r}
+fit3 <- us_change %>% 
+  model(r1 = TSLM(Consumption ~ Income),
+        r2 = TSLM(Consumption ~ Income + Production),
+        r3 = TSLM(Consumption ~ Income + Production + Savings + Unemployment),
+        r4 = TSLM(Consumption ~ Income + Production + Savings),
+        r5 = TSLM(Consumption ~ Income + Savings + Unemployment),
+        r6 = TSLM(Consumption ~ Income + Production + Unemployment),
+        r7 = TSLM(Consumption ~ Income + Savings)
+        )
+fit3 %>% 
+  glance() %>% 
+  select(.model, adj_r_squared, AIC, AICc, BIC)
+```
+
+```{r}
+fit3 %>% 
+  select(r3) %>% 
+  report()
+```
+
+## Backwards stepwise regression
+
+- Se epmieza con un modelo con todas las predictoras. 
+- Se quita una a la vez. 
+- Se mantiene el modelo dependiendo de si hay mejora o no.
+
+```{r}
+us_change %>% 
+  model(i = TSLM(Consumption ~ Income + Production + Savings + Unemployment),
+        ii = TSLM(Consumption ~ Income + Production + Savings),
+        iii = TSLM(Consumption ~ Income + Production + Unemployment),
+        iv = TSLM(Consumption ~ Income + Savings + Unemployment),
+        v = TSLM(Consumption ~ Production + Savings + Unemployment)
+        ) %>% 
+  glance() %>% 
+  select(.model, adj_r_squared, AIC, AICc, BIC)
+```
+Con base a AICc es mejor el que incluye todas las predictoras.
+
+Con base a BIC es mejor el que no incluye al desempleo.
+
+```{r}
+us_change %>% 
+  model(i = TSLM(Consumption ~ Income + Production + Savings + Unemployment),
+        ii = TSLM(Consumption ~ Income + Production + Savings),
+        iii = TSLM(Consumption ~ Income + Production),
+        iv = TSLM(Consumption ~ Income + Savings),
+        v = TSLM(Consumption ~ Production + Savings),
+        vi = TSLM(Consumption ~ Income + Savings + Unemployment),
+        vii = TSLM(Consumption ~ Production + Savings + Unemployment),
+        viii = TSLM(Consumption ~ Income + Production + Unemployment)
+        ) %>% 
+  glance() %>% 
+  select(.model, adj_r_squared, AIC, AICc, BIC)
+```
+
+
+## Forwards stepwise regression
+
+- Comenzar con un modelo simple con solo el intercepto.
+- Ir añadiendo predictoras.
+- Elegir solo la que más mejore el modelo. 
+- Iterar.
+
+```{r}
+us_change %>% 
+  model(i = TSLM(Consumption ~ Income),
+        ii = TSLM(Consumption ~ Production),
+        iii = TSLM(Consumption ~ Savings),
+        iv = TSLM(Consumption ~ Unemployment)
+        ) %>% 
+  glance() %>% 
+  select(.model, adj_r_squared, AIC, AICc, BIC)
+```
+
+```{r}
+us_change %>% 
+  model(
+    o   = TSLM(Consumption ~ Production),
+    i   = TSLM(Consumption ~ Production + Income),
+    ii  = TSLM(Consumption ~ Production + Savings),
+    iii = TSLM(Consumption ~ Production + Unemployment)
+  ) %>% 
+  glance() %>% 
+  select(.model, adj_r_squared, AIC, AICc, BIC)
+```
+
+```{r}
+us_change %>% 
+  model(
+    i   = TSLM(Consumption ~ Production + Income),
+    ii  = TSLM(Consumption ~ Production + Income + Savings),
+    iii = TSLM(Consumption ~ Production + Income + Unemployment)
+  ) %>% 
+  glance() %>% 
+  select(.model, adj_r_squared, AIC, AICc, BIC)
+```
+
+```{r}
+us_change %>% 
+  model(
+    i   = TSLM(Consumption ~ Production + Income + Savings),
+    ii  = TSLM(Consumption ~ Production + Income + Savings + Unemployment)
+  ) %>% 
+  glance() %>% 
+  select(.model, adj_r_squared, AIC, AICc, BIC)
+```
+
+# Pronóstico
+
+## Pronósticos ex-ante
+
+Solo se utiliza información disponible hasta el último dato del histórico. Se tiene que pronosticar las predictoras antes de poder pronosticar la variable de interés.
+
+```{r}
+# mod_predictoras <- function(predictora, horizonte = 4) {
+#   us_change %>% 
+#     model(predictora = ARIMA(as.formula(predictora)) %>% 
+#     forecast(h = horizonte)
+# }
+# 
+# mod_predictoras(predictora = Income)
+
+ingreso <-  us_change %>% 
+  model(ETS = ETS(Income),
+        ARIMA = ARIMA(Income)
+        ) %>% 
+  forecast(h = 4) 
+
+ingreso %>% 
+  autoplot(us_change, level = NULL)
+
+```
+```{r}
+produccion <- us_change %>% 
+  model(
+    ETS = ETS(Production),
+    ARIMA = ARIMA(Production)
+  ) %>% 
+  forecast(h = 4)
+produccion %>% 
+  autoplot(us_change, level = NULL)
+```
+
+```{r}
+ahorro <- us_change %>% 
+  model(
+    ETS = ETS(Savings),
+    ARIMA = ARIMA(Savings)
+  ) %>% 
+  forecast(h = 4)
+ahorro %>% 
+  autoplot(us_change, level = NULL)
+```
+```{r}
+
+desempleo <- us_change %>% 
+  model(
+    ETS = ETS(Unemployment),
+    ARIMA = ARIMA(Unemployment)
+  ) %>% 
+  forecast(h = 4)
+desempleo %>% 
+  autoplot(us_change, level = NULL)
+```
+Teniendo los pronósticos de las predictoras, generamos el pronóstico del consumo.
+
+```{r}
+fit <- us_change %>% 
+  model(
+    `Regresión lineal múltiple` = TSLM(Consumption ~ Income + Production + Savings + Unemployment)
+  )
+
+datos_futuros <- new_data(us_change,4) %>% 
+  mutate(Income = ingreso %>% filter(.model == "ARIMA") %>% pull(.mean), 
+         Savings = ahorro %>% filter(.model == "ARIMA") %>% pull(.mean), 
+         Unemployment = desempleo %>% filter(.model == "ARIMA") %>% pull(.mean),
+         Production = produccion %>% filter(.model == "ARIMA") %>% pull(.mean))
+
+datos_futuros
+```
+
+```{r}
+fc <- forecast(fit, datos_futuros)
+
+fc %>% 
+  autoplot(us_change)
+```
+
+```{r}
+fc %>% 
+  autoplot(us_change %>% filter_index("2016 Q1" ~ .))
+```
+
+## Pronósticos ex-post
+
+Se utiliza información real disponible de las predictoras. Estos pronósticos ya no son reales. 
+
+## Pronósticos basados en escenarios
+
+```{r}
+fit_escenarios <- us_change %>% 
+  model(lineal = TSLM(Consumption ~ Income + Savings + Unemployment))
+
+# Necesitamos agregar nuevos datos de las predictoras
+escenarios <- scenarios(
+  optimista = new_data(us_change, 4) %>% 
+    mutate(Income = c(0,0.2,0,1.2), Savings = c(0,-0.1,0.5,-1), Unemployment = -0.1),
+  pesimista = new_data(us_change, 4) %>% 
+    mutate(Income = -1, Savings = -0.5, Unemployment = 0.1),
+  names_to = "Escenario"
+)
+
+fc_escenarios <- fit_escenarios %>% 
+  forecast(new_data = escenarios)
+
+us_change %>% 
+  autoplot(Consumption) +
+  autolayer(fc_escenarios)
+```
+
+# Inclusión de predictoras útiles
+
+Para la producción de cerveza:
+
+```{r}
+recent_production <- aus_production %>% 
+  filter(year(Quarter) >= 1992)
+
+recent_production
+```
+
+```{r}
+recent_production %>% 
+  autoplot(Beer) +
+  labs(x = "Año", y = "Megalitros", 
+       title = "Producción de cerveza trimestral en Australia")
+```
+
+Hay predictoras que pueden ser útiles en el análisis de regresión. 
+
+1. Predictora de tendencia trend()
+
+$$y_t = \beta_0 + \beta_1t+e_t$$
+2. Variables dummy estacionales
+
+Las variables dummy toman solo dos valores: 1 o 0.
+
+Para agregar variables dummy, solo tiene que escriibr season()
+
+```{r}
+recent_production %>% 
+  select(Quarter,Beer) %>% 
+  mutate(tendencia = seq_along(recent_production$Quarter),
+         q2 = if_else(quarter(Quarter)==2,1,0),
+         q3 = if_else(quarter(Quarter)==3,1,0),
+         q4 = if_else(quarter(Quarter)==4,1,0)
+         ) %>% 
+  model(TSLM(Beer ~ tendencia + q2 + q3 + q4)) %>% 
+  report()
+```
+```{r}
+fit_beer <- recent_production %>% 
+  model(TSLM(Beer ~ trend() + season()))
+
+report(fit_beer)
+```
+
+```{r}
+p <- augment(fit_beer) %>% 
+  ggplot(aes(x = Quarter)) +
+  geom_line(aes(y = Beer, color = "Datos")) +
+  geom_line(aes(y = .fitted, color = "Fitted")) +
+  labs(x = "Año", y = "Megalitros")
+
+ggplotly(p)
+```
+
+Hay un trimestre que está por debajo, se puede agregar una variable de intervención para ese periodo. 
+
+## Spike variables
+
+Capturan el efecto de un solo periodo
+
+```{r}
+cerveza <- recent_production %>% 
+  select(Quarter, Beer) %>% 
+  mutate(
+    q2_94 = if_else(Quarter == yearquarter("1994 Q2"),1,0),
+    q4_04 = if_else(Quarter == yearquarter("2004 Q4"),1,0)
+  )
+cerveza
+
+```
+
+```{r}
+fit_beer <- cerveza %>% 
+  model(TSLM(Beer ~ trend() + season() + q2_94 + q4_04))
+
+report(fit_beer)
+```
+```{r}
+p <- augment(fit_beer) %>% 
+  ggplot(aes(x = Quarter)) +
+  geom_line(aes(y = Beer, color = "Datos")) +
+  geom_line(aes(y = .fitted, color = "Fitted")) +
+  labs(x = "Año", y = "Megalitros")
+
+ggplotly(p)
+```
+
+## Cambios de nivel 
+
+Capturan el efecto a partir de cierto periodo
+
+```{r}
+cerveza <- cerveza %>% 
+  mutate(d2000 = if_else(year(Quarter)>=2000,1,0))
+cerveza
+```
+
+```{r}
+fit_beer <- cerveza %>% 
+  model(TSLM(Beer ~ trend() + season() + d2000))
+
+report(fit_beer)
+```
+
+```{r}
+p <- augment(fit_beer) %>% 
+  ggplot(aes(x = Quarter)) +
+  geom_line(aes(y = Beer, color = "Datos")) +
+  geom_line(aes(y = .fitted, color = "Fitted")) +
+  labs(x = "Año", y = "Megalitros")
+
+ggplotly(p)
+```
+
+```{r}
+cerveza %>% 
+  gg_tsdisplay(Beer %>% difference(4), plot_type = "partial")
+```
+
+# Regresiones no lineales
+
+## Modelos exponenciales 
+
+Modelos log.log
+$$logy_t = \beta_0 + \beta_1log x_t$$
+
+Modelos lin-log
+$$y_t = \beta_0 + \beta_1log x_t$$
+
+Modelos log-lin
+$$logy_t = \beta_0 + \beta_1x_t$$
+
+## Modelos de regresión lineal por partes (picewise)
+
+```{r}
+boston_men <- boston_marathon %>% 
+  filter(Event == "Men's open division") %>% 
+  mutate(Minutes = as.numeric(Time)/60)
+
+p <- boston_men %>% 
+  autoplot(Minutes) + 
+  ggtitle("Tiempos ganadores del maratón de Boston, categoría abierta de hombres")
+
+ggplotly(p)
+```
+
+```{r}
+fit_boston <- boston_men %>% 
+  model(
+    lineal = TSLM(Minutes ~ trend()),
+    )
+
+fc_boston <- fit_boston %>% forecast(h = 10)
+
+boston_men %>% 
+  autoplot(Minutes) +
+  geom_line(aes(y = .fitted, color = .model), data = fitted(fit_boston)) +
+  autolayer(fc_boston, alpha = 0.5, level = 95) +
+  ggtitle("Maratón de Boston, cat. abierta de hombres")
+```
+
+```{r}
+fit_boston <- boston_men %>% 
+  model(
+    lineal = TSLM(Minutes ~ trend()),
+    exponencial = TSLM(log(Minutes) ~ trend()),
+    `Reg. por partes` = TSLM(Minutes ~ trend(knots = c(1940,1980)))
+  )
+
+fc_boston <- fit_boston %>% forecast(h = 10)
+
+boston_men %>% 
+  autoplot(Minutes) +
+  geom_line(aes(y = .fitted, color = .model), data = fitted(fit_boston)) +
+  autolayer(fc_boston, alpha = 0.5, level = 95) +
+  ggtitle("Maratón de Boston, cat. abierta de hombres")
+```
+
+```{r}
+fit_boston <- boston_men %>% 
+  model(
+    lineal = TSLM(Minutes ~ trend()),
+    exponencial = TSLM(log(Minutes) ~ trend()),
+    `Reg. por partes` = TSLM(Minutes ~ trend(knots = c(1940,1980))),
+    `Reg. por partes2` = TSLM(Minutes ~ trend(knots = c(1975))),
+    `Reg. por partes3` = TSLM(Minutes ~ trend(knots = c(1915, 1950, 1988))),
+    `Reg. por partes4` = TSLM(Minutes ~ trend(knots = c(1915, 1927, 1950, 1985)))
+  )
+
+fc_boston <- fit_boston %>% forecast(h = 10)
+
+boston_men %>% 
+  autoplot(Minutes) +
+  geom_line(aes(y = .fitted, color = .model), data = fitted(fit_boston)) +
+  autolayer(fc_boston, alpha = 0.5, level = 95) +
+  ggtitle("Maratón de Boston, cat. abierta de hombres")
+```
+
+```{r}
+accuracy(fit_boston) %>% 
+  arrange(MAPE)
+```
+
+Box-cox
+```{r}
+lambda <- boston_men %>% 
+  features(Minutes, guerrero) %>% 
+  pull(lambda_guerrero)
+
+p1 <- boston_men %>% 
+  autoplot(Minutes)
+
+p2 <- boston_men %>% 
+  autoplot(box_cox(Minutes, lambda = lambda))
+
+p3 <- boston_men %>% 
+  autoplot(log(Minutes))
+
+p1/p2/p3
+```
+

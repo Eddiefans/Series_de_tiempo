@@ -1,0 +1,142 @@
+---
+title: "03 Tarea descomposición"
+author: "Eddie Aguilar"
+format:
+  html:
+    self-contained: true
+editor: source
+---
+
+```{r}
+#| message: false
+library("tidyverse")
+library("fpp3")
+library("tidyquant")
+library("timetk")
+library("patchwork")
+library("scales")
+library("fpp2")
+```
+
+# Tarea
+
+## 1.
+
+```{r}
+ggplot(global_economy, aes(x = Year, y = GDP/Population)) + 
+  geom_line(aes(color = Country)) +
+  theme(legend.position = "none")
+
+
+
+biggest_GDP <- (mutate(global_economy, GDP_capita = GDP / Population) %>% 
+  group_by(Country) %>% 
+  filter(Year == 2016) %>% 
+  arrange(desc(GDP_capita))
+    )[1, ] %>% 
+  pull(Country)
+
+ggplot(filter(global_economy, Country == biggest_GDP), aes(x = Year, y = GDP/Population)) + 
+  geom_line(aes(color = Country))
+```
+
+## 2.
+i.
+
+Transformación poblacional
+
+```{r}
+autoplot(filter(global_economy, Code == "USA"), GDP/Population)
+```
+Toma en cuenta la población al hablar del PIB.
+
+
+ii.
+
+Transformación poblacional
+
+Transformación box cox
+```{r}
+gdp_mexico <- filter(global_economy, Country == "Mexico") %>% 
+  mutate(GDP_capita = GDP/Population) %>% 
+  select(Year, GDP_capita)
+
+(lambda <- gdp_mexico %>%
+  features(GDP_capita, features = guerrero) %>%
+  pull(lambda_guerrero))
+
+autoplot(gdp_mexico, box_cox(GDP_capita, lambda))
+```
+Hizo la estacionalidad más estable y toma en cuenta la población al hablar del PIB.
+
+
+iii.
+
+Transformación box cox
+```{r}
+(lambda <- features(vic_elec, Demand, features = guerrero) %>% pull(lambda_guerrero))
+
+autoplot(vic_elec, Demand)
+autoplot(vic_elec, box_cox(Demand, lambda))
+```
+Hizo la estacionalidad un poco más uniforme.
+
+
+## 3. 
+```{r}
+(lambda <- features(canadian_gas, Volume, features = guerrero) %>% pull(lambda_guerrero))
+autoplot(canadian_gas, Volume) +
+  geom_line(aes(y = box_cox(Volume, lambda), x = Month), color = "red")
+```
+Sí es útil realizar transformación Box-Cox para hacer más uniformes las variaciones de estacionalidad. 
+
+
+## 4.
+
+```{r}
+productA <- fma::plastics %>% as_tsibble() %>% mutate(Month = yearmonth(index)) %>% 
+  update_tsibble(index = Month) %>% select(Month, value, -index)
+autoplot(productA, value)
+```
+Tiene una clara estacionalidad uniforme y tendencia alcista ligera. 
+
+
+```{r}
+dcmp <- productA %>%
+  model(classical_decomposition(value, type = "multiplicative")) 
+dcmp %>% 
+  components() %>%
+  autoplot()
+```
+Coincide con el análisis hecho previamente.
+
+```{r}
+productA %>%
+  autoplot(value, color='gray') +
+  autolayer(components(dcmp), season_adjust, color='blue')
+  
+```
+
+```{r}
+productA1 <- productA
+productA2 <- productA
+productA1[30, 2] = 2500
+productA2[60, 2] = 2500
+
+dcmp1 <- productA1 %>%
+  model(classical_decomposition(value, type = "multiplicative")) 
+dcmp2 <- productA2 %>%
+  model(classical_decomposition(value, type = "multiplicative")) 
+
+autoplot(productA, value, color='gray') +
+  autolayer(components(dcmp), season_adjust, color='blue')
+
+autoplot(productA1, value, color='gray') +
+  autolayer(components(dcmp1), season_adjust, color='blue')
+
+autoplot(productA2, value, color='gray') +
+  autolayer(components(dcmp2), season_adjust, color='blue')
+```
+Al tener outliers, los datos desestacionalizados no son tan efectivos, tiene más picos con un outlier. 
+
+Vemos como al tener el outlier al final de la gráfica, los datos desetacionalizados se mantienen efectivos, pero presenta un mayor pico en el outlier. 

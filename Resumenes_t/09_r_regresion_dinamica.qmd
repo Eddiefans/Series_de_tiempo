@@ -1,0 +1,380 @@
+---
+title: "09 Resumen regresión dinámica"
+author: "Eddie Aguilar"
+format:
+  html:
+    self-contained: true
+editor: source
+---
+
+```{r}
+#| message: false
+library("easypackages")
+packages("tidyverse","fpp3", "tsibble", "feasts","fable", "patchwork")
+library(plotly)
+```
+
+
+# Modelos de regresión dinámica
+
+# 1. Introducción
+
+Los modelos de suavización exponencial y ARIMA no pueden incluir información externa a la serie. 
+Por el otro lado, regresión lineal sí toma en cuenta otras variables, pero siempre asume que el error es ruido blanco. 
+Por lo tanto, podemosunir estos dos modelos y resultará en un modelo de regresión dinámica, igual que al lineal pero el error es modelado con ARIMA. 
+
+Hay que tomar en cuenta que en regresión dinámica, es necesario que todas las variables sean estacionarias. 
+
+# 2. Regresión con errores ARIMA en R con fable
+
+Al agregar pdq(d=1), R aplicará las primeras diferencias a todas las variables, si no se agrega los valores de pdq, R los buscará automáticamente. 
+
+```{r}
+ARIMA(y ~ x + pdq(1,1,0))
+```
+Ejemplo
+
+Analizar y pronosticar los cambios en el consumo personal a través de el ingreso disponible.  
+
+```{r}
+us_change <- read_csv("https://otexts.com/fpp3/extrafiles/us_change.csv") %>%
+  mutate(Time = yearquarter(Time)) %>%
+  as_tsibble(index = Time)
+```
+```{r}
+us_change %>%
+  gather("var", "value", Consumption, Income) %>%
+  ggplot(aes(x = Time, y = value)) +
+  geom_line() +
+  facet_grid(vars(var), scales = "free_y") +
+  xlab("Year") + ylab(NULL) +
+  ggtitle("Quarterly changes in US consumption and personal income")
+```
+
+```{r}
+us_change %>% 
+  ggplot(aes(x = Income, y = Consumption))+
+  geom_point()
+```
+pdq automáticos:
+```{r}
+fit <- us_change %>%
+  model(ARIMA(Consumption ~ Income))
+report(fit)
+```
+Viendo los errores de la regresión y de ARIMA con residuals(), los podemos seperar con type = "regression" y type = "innovations" para los errores ARIMA. 
+
+```{r}
+bind_rows(
+  `Regression Errors` = as_tibble(residuals(fit, type="regression")),
+  `ARIMA Errors` = as_tibble(residuals(fit, type="innovation")),
+  .id = "type"
+) %>%
+  ggplot(aes(x = Time, y = .resid)) +
+  geom_line() +
+  facet_grid(vars(type), scales = "free_y") +
+  xlab("Year") + ylab(NULL)
+```
+Asegurarnos que los errores ARIMA sean ruido blanco:
+
+```{r}
+fit %>% gg_tsresiduals()
+```
+Ljung-Box:
+```{r}
+augment(fit) %>%
+  features(.resid, ljung_box, dof = 5, lag = 8)
+```
+
+
+# 3. Pronóstico
+
+Para llevar a cabo pronósticos de modelos de regresión con errores ARIMA, se necesita realizar el pronóstico de:
+
+- La parte de la regresión
+- La parte de los erroes ARIMA
+
+y combinar los resultados. 
+
+Necesitamos pronósticos de las variables independientes o predictoras para poder pronosticar nuestra variable de interés. Si las predictoras no son conocidas en el futuro, tenemos que modelarlas por separado, o asumir valores futuros para cada una. 
+
+Ejemplo: 
+
+Regresando al consumo personal a partir del ingreso, podemos suponer que los cambios porcentuales en el ingreso serán iguales a el cambio promedio porcentual de los últimos 40 años: 
+
+```{r}
+us_change_future <- new_data(us_change, 8) %>% mutate(Income = mean(us_change$Income))
+forecast(fit, new_data = us_change_future) %>%
+  autoplot(slice_tail(us_change, n = 80)) + 
+  xlab("Year") +
+  ylab("Percentage change") + 
+  ggtitle("Pronóstico de regresión con errores ARIMA")
+```
+Comparando con ARIMA:
+
+```{r}
+fit_prev <- us_change %>%
+  model(ARIMA(Consumption ~ PDQ(0,0,0)))
+
+fit_prev %>% forecast(h=10) %>% 
+  autoplot(slice(us_change, (n()-80):n())) + 
+  ggtitle("Pronóstico con modelo ARIMA")
+```
+En este nuevo modelo, podemos capturar más informción, por lo tanto, los intervalos de predicción se reducen. 
+
+Hay que tomar en cuenta que los intervalos de predicción no toman en cuenta la incertidumbre de las predictoras. 
+
+Ejemplo:
+
+Demanda de energía a parir de temperatura.
+
+```{r}
+vic_elec_daily <- vic_elec %>%
+  filter(year(Time) == 2014) %>%
+  index_by(Date = date(Time)) %>%
+  summarise(
+    Demand = sum(Demand)/1e3,
+    Temperature = max(Temperature),
+    Holiday = any(Holiday)
+  ) %>%
+  mutate(Day_Type = case_when(
+    Holiday ~ "Holiday",
+    wday(Date) %in% 2:6 ~ "Weekday",
+    TRUE ~ "Weekend"
+  ))
+
+vic_elec_daily %>%
+  ggplot(aes(x=Temperature, y=Demand, colour=Day_Type)) +
+    geom_point() +
+    ylab("Electricity demand (GW)") +
+    xlab("Maximum daily temperature")
+```
+Como vemos, es una función cuadratica y la energia demandada sí depende del día y la temperatura. 
+
+Gráficas de tiempo:
+
+```{r}
+vic_elec_daily %>% 
+  pivot_longer(cols = c(Demand, Temperature), names_to = "vars",
+               values_to = "value") %>% 
+  ggplot(aes(x = Date, y = value)) + 
+  geom_line() + 
+  facet_wrap(~ vars, ncol = 1, strip.position = "right", scales = "free")
+```
+Al ser una relación cuadrática, ajustaremos el modelo cuadrático con errores ARIMA, y agregamos una variable para indicar si el día fue hábil o no. 
+
+```{r}
+fit <- vic_elec_daily %>%
+  model(ARIMA(Demand ~ Temperature + I(Temperature^2) + (Day_Type=="Weekday")))
+
+report(fit)
+```
+
+```{r}
+fit %>% gg_tsresiduals()
+```
+```{r}
+augment(fit) %>%
+  features(.resid, ljung_box, dof = 8, lag = 14)
+```
+
+Al momento de pronosticar, necesitamos datos respecto a la tempreatura futura y podemos hacer dos cosas:
+
+- Conseguir los datos de algún pronóstico meteorológico y meterlos al modelo. 
+- Podemos pronosticar bajo un escenario. Asumiremos que la temperatura máxima se mantendrá constante a 26 grados. 
+
+```{r}
+vic_elec_future <- new_data(vic_elec_daily, 14) %>%
+  mutate(
+    Temperature = 26,
+    Holiday = c(TRUE, rep(FALSE, 13)),
+    Day_Type = case_when(
+      Holiday ~ "Holiday",
+      wday(Date) %in% 2:6 ~ "Weekday",
+      TRUE ~ "Weekend"
+    )
+  )
+forecast(fit, vic_elec_future) %>%
+  autoplot(vic_elec_daily) + ylab("Electricity demand (GW)")
+```
+
+```{r}
+vic_elec_future <- new_data(vic_elec_daily, 14) %>%
+  mutate(
+    Temperature = c(seq(31,34),33,rep(34,3),rep(33,6)),
+    Holiday = c(TRUE, rep(FALSE, 13)),
+    Day_Type = case_when(
+      Holiday ~ "Holiday",
+      wday(Date) %in% 2:6 ~ "Weekday",
+      TRUE ~ "Weekend"
+    )
+  )
+vic_elec_future
+
+forecast(fit, vic_elec_future) %>%
+  autoplot(vic_elec_daily) + ylab("Electricity demand (GW)")
+```
+
+# 4. Regresión armónica dinámica
+
+Las series de Fourier es un método alternativo de los dummies muy bueno para periodos estacionales muy largos. Ya que ARIMA y ETS son métodos que estiman estacionalidad, pero pierde efectividad entre mayor sea el periodo estacional, y que, las dummies estiman estacionalidad de cualquier tamaño, pero si es un periodo muy grande, se necesitarán muchas variables, el uso de series de Fourier es buena opción. 
+
+Una serie de Fourier es una función básica trigonométrica, tiene un seno y un coseno. Al ser una función trigonométrica periódica, simula una estacionalidad y el uso de esta nos puede ayudar a pronosticar una serie estacional. 
+
+Como se comentó, una serie de Fourier se consituye de un seno y coseno, y se pueden utilizar tantos pares de senos y cosenos como se desea. 
+
+El número de pares es lo que cambiará la suavización o el ajuste del método a los datos de entrenamiento. Entre más pares, mejor ajuste (hay que tomar en cuenta el over-fitting).
+
+El máximo absoluto de pares usados para un buen pronóstico es el periodo estacional $m / 2$.
+
+Ejemplos de estacionalidades largas:
+
+- Datos diarios, donde pueden tener estacionalidad anual. (m = 365)
+- Datos semanales (m = 52)
+- Datos por cada media hora con estacionalidad diaria. (m = 48)
+
+Ventajas:
+
+- Permite cualquier tamaño de estacionalidad.
+- Se pueden simular varios tipos de estacionalidad al mismo tiempo (con distintas frecuencias).
+- La suavización del patrón estacional es controlado.
+- La dinámica de corto plazo puede ser controlada a través de errores ARIMA.
+
+
+## Ejemplo
+
+Gasto en comidas fuera de casa.
+
+```{r}
+aus_cafe <- aus_retail %>%
+  filter(
+    Industry == "Cafes, restaurants and takeaway food services",
+    year(Month) %in% 2004:2018
+  ) |> summarise(Turnover = sum(Turnover))
+aus_cafe
+autoplot(aus_cafe)
+```
+Probamos con varios niveles $K$ (número de pares):
+
+```{r}
+fit <- aus_cafe %>%
+  model(
+    `K = 1` = ARIMA(log(Turnover) ~ fourier(K = 1) + PDQ(0,0,0)),
+    `K = 2` = ARIMA(log(Turnover) ~ fourier(K = 2) + PDQ(0,0,0)),
+    `K = 3` = ARIMA(log(Turnover) ~ fourier(K = 3) + PDQ(0,0,0)),
+    `K = 4` = ARIMA(log(Turnover) ~ fourier(K = 4) + PDQ(0,0,0)),
+    `K = 5` = ARIMA(log(Turnover) ~ fourier(K = 5) + PDQ(0,0,0)),
+    `K = 6` = ARIMA(log(Turnover) ~ fourier(K = 6) + PDQ(0,0,0))
+  )
+glance(fit)
+```
+
+```{r}
+rep_model <- function(modelo) {
+  print(strrep("- - ",18))
+  print(paste("Modelo", modelo, sep = " "))
+  fit %>% 
+    select(all_of(modelo)) %>% 
+    report()
+}
+
+names(fit) %>% 
+  map(rep_model)
+
+```
+
+```{r}
+p <- fit %>%
+  forecast(h = "2 years") %>%
+  autoplot(aus_cafe) +
+  facet_wrap(vars(.model), ncol = 2) +
+  guides(colour = FALSE) +
+  geom_label(
+    aes(x = yearmonth("2007 Jan"), y = 4250, label = paste0("AICc = ", format(AICc))),
+    data = glance(fit)
+  )
+p
+```
+
+```{r}
+p <- fit %>% 
+  select(`K = 3`) %>% 
+  forecast(h = "2 years") %>%
+  autoplot(aus_cafe) +
+  facet_wrap(vars(.model), ncol = 2) +
+  guides(colour = FALSE)
+p
+```
+
+## Ejemplo 2
+
+```{r}
+vic_elec
+```
+
+Usando datos cada hora: 
+
+```{r}
+(vic_elec_hour <- index_by(vic_elec, time = ~ floor_date(., unit="hour")) |> 
+  summarise(demand = sum(Demand),
+         mean_temp = mean(Temperature),
+         max_temp = max(Temperature),
+         holiday = any(Holiday)) |> 
+    mutate(
+      day_type = case_when(
+        holiday ~ "holiday",
+        wday(time) %in% 2:6 ~ "weekday",
+        TRUE ~ "weekend"
+      )))
+```
+
+```{r}
+p <- autoplot(vic_elec_hour, demand, color = "blue")
+
+ggplotly(p, dynamicTicks = TRUE) |> rangeslider()
+```
+
+```{r}
+vic_elec_hour |> 
+  ggplot(aes(x = mean_temp, y = demand, 
+             color = holiday)) +
+  geom_point(alpha = 0.5)
+```
+
+```{r}
+vic_elec_hour |> 
+  ggplot(aes(x = mean_temp, y = demand, 
+             color = day_type)) +
+  geom_point(alpha = 0.5)
+```
+
+```{r}
+(train <- filter(vic_elec_hour, year(time) %in% 2012:2013))
+```
+
+```{r}
+# maximos:
+# year = 4380
+# week = 84
+# day = 12
+
+fit <- train |>  
+  model(
+    Fourier = TSLM(log(demand) ~ fourier(period = "year", K = 438) + 
+                      fourier(period = "week", K = 42) + 
+                      fourier(period = "day", K = 6)))
+glance(fit)
+```
+```{r}
+fc <- forecast(fit, h = "1 year")
+fc
+```
+
+
+```{r}
+ggplot() +
+  geom_line(vic_elec_hour, mapping = aes(x = time, y = demand)) + 
+  geom_line(fc, mapping = aes(x = time, y = .mean), color = "blue", alpha = 0.8)
+```
+
+
